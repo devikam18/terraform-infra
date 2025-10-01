@@ -74,8 +74,12 @@ resource "aws_s3_bucket_public_access_block" "public_access" {
 ############################################
 # DynamoDB Table for Locking
 ############################################
+resource "random_id" "dynamodb_suffix" {
+  byte_length = 4
+}
+
 resource "aws_dynamodb_table" "terraform_locks" {
-  name         = var.dynamodb_table_name
+  name         = "terraform-locks-${random_id.dynamodb_suffix.hex}"
   hash_key     = "LockID"
   billing_mode = "PAY_PER_REQUEST"
 
