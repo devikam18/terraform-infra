@@ -46,13 +46,11 @@ jobs:
       # 5. Terraform Main Infrastructure
       ############################################
       - name: Terraform Init - Main Infra
-        working-directory: terraform
         run: terraform init
 
       - name: Terraform Plan - Main Infra
-        working-directory: terraform
         run: terraform plan -out=tfplan
 
       - name: Terraform Apply - Main Infra
-        working-directory: terraform
+       
         run: terraform apply -auto-approve tfplan
