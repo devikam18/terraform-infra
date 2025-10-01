@@ -24,7 +24,7 @@ jobs:
         uses: hashicorp/setup-terraform@v3
 
       - name: Terraform Init with Backend
-        working-directory: terraform
+        
         run: |
           terraform init -reconfigure \
             -backend-config="bucket=${{ github.event.workflow_run.outputs.s3_bucket }}" \
@@ -33,9 +33,9 @@ jobs:
             -backend-config="key=infra/terraform.tfstate"
 
       - name: Terraform Plan
-        working-directory: terraform
+       
         run: terraform plan
 
       - name: Terraform Apply
-        working-directory: terraform
+        
         run: terraform apply -auto-approve
