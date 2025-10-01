@@ -27,3 +27,9 @@ jobs:
       - name: Terraform Apply
         working-directory: terraform-bootstrap
         run: terraform apply -auto-approve
+      - name: Save Backend Outputs
+        working-directory: terraform-bootstrap
+        id: save_outputs
+        run: |
+          echo "S3_BUCKET=$(terraform output -raw s3_bucket_name)" >> $GITHUB_ENV
+          echo "DYNAMO_TABLE=$(terraform output -raw dynamodb_table_name)" >> $GITHUB_ENV
