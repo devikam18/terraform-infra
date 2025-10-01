@@ -1,7 +1,7 @@
 ############################################
 # Variables
 ############################################
-variable "bucket_name" {
+variable "bucket_name_prefix" {
   default = "my-terraform-state-bucket-demo"
 }
 
@@ -11,6 +11,13 @@ variable "dynamodb_table_name" {
 
 variable "environment" {
   default = "dev"
+}
+
+############################################
+# Random ID for uniqueness
+############################################
+resource "random_id" "bucket_suffix" {
+  byte_length = 4
 }
 
 ############################################
@@ -24,15 +31,16 @@ provider "aws" {
 # S3 Bucket for Terraform State
 ############################################
 resource "aws_s3_bucket" "terraform_state" {
-  bucket = var.bucket_name
+  bucket = "${var.bucket_name_prefix}-${random_id.bucket_suffix.hex}"
 
   tags = {
     Name        = "terraform-state"
     Environment = var.environment
   }
 
+  # Optional: remove if you want to allow destroy in CI/CD
   lifecycle {
-    prevent_destroy = true
+    prevent_destroy = false
   }
 }
 
@@ -80,3 +88,15 @@ resource "aws_dynamodb_table" "terraform_locks" {
     Environment = var.environment
   }
 }
+
+############################################
+# Outputs
+############################################
+output "s3_bucket_name" {
+  value = aws_s3_bucket.terraform_state.id
+}
+
+output "dynamodb_table_name" {
+  value = aws_dynamodb_table.terraform_locks.name
+}
+
