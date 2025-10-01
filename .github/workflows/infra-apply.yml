@@ -35,7 +35,7 @@ jobs:
           terraform init -reconfigure \
             -backend-config="bucket=$S3_BUCKET" \
             -backend-config="dynamodb_table=$DYNAMO_TABLE" \
-            -backend-config="region=ap-south-2" \
+            
             -backend-config="key=infra/terraform.tfstate"
 
       - name: Terraform Plan
