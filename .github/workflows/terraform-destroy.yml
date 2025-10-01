@@ -35,15 +35,15 @@ jobs:
 
       # 4️⃣ Destroy Main Infra first
       - name: Terraform Init - Main Infra
-        working-directory: terraform
+       
         run: terraform init -input=false
 
       - name: Show State - Main Infra
-        working-directory: terraform
+        
         run: terraform state list || echo "No resources in main infra state"
 
       - name: Terraform Destroy - Main Infra
-        working-directory: terraform
+        
         run: terraform destroy -auto-approve
 
       # 5️⃣ Destroy Bootstrap last (S3 + DynamoDB)
