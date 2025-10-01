@@ -1,4 +1,28 @@
-# S3 bucket
+############################################
+# Variables
+############################################
+variable "bucket_name" {
+  default = "my-terraform-state-bucket-demo"
+}
+
+variable "dynamodb_table_name" {
+  default = "terraform-locks-demo"
+}
+
+variable "environment" {
+  default = "dev"
+}
+
+############################################
+# Provider
+############################################
+provider "aws" {
+  region = "ap-south-2"
+}
+
+############################################
+# S3 Bucket for Terraform State
+############################################
 resource "aws_s3_bucket" "terraform_state" {
   bucket = var.bucket_name
 
@@ -12,7 +36,6 @@ resource "aws_s3_bucket" "terraform_state" {
   }
 }
 
-# Bucket Versioning (new resource block)
 resource "aws_s3_bucket_versioning" "versioning" {
   bucket = aws_s3_bucket.terraform_state.id
 
@@ -21,7 +44,6 @@ resource "aws_s3_bucket_versioning" "versioning" {
   }
 }
 
-# Bucket Encryption (new resource block)
 resource "aws_s3_bucket_server_side_encryption_configuration" "encryption" {
   bucket = aws_s3_bucket.terraform_state.bucket
 
@@ -32,7 +54,6 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "encryption" {
   }
 }
 
-# Public Access Block
 resource "aws_s3_bucket_public_access_block" "public_access" {
   bucket = aws_s3_bucket.terraform_state.id
 
@@ -42,6 +63,9 @@ resource "aws_s3_bucket_public_access_block" "public_access" {
   restrict_public_buckets = true
 }
 
+############################################
+# DynamoDB Table for Locking
+############################################
 resource "aws_dynamodb_table" "terraform_locks" {
   name         = var.dynamodb_table_name
   hash_key     = "LockID"

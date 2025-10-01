@@ -1,4 +1,16 @@
 ############################################
+# Terraform Backend
+############################################
+terraform {
+  backend "s3" {
+    bucket         = "my-terraform-state-bucket-demo"   # matches bootstrap
+    key            = "infra/terraform.tfstate"
+    region         = "ap-south-2"
+    dynamodb_table = "terraform-locks-demo"
+  }
+}
+
+############################################
 # Provider
 ############################################
 provider "aws" {
@@ -6,7 +18,7 @@ provider "aws" {
 }
 
 ############################################
-# Step 1: Network Setup - VPC, Subnets, IGW, Route Table
+# Network: VPC, Subnets, IGW, Route Table
 ############################################
 resource "aws_vpc" "main_vpc" {
   cidr_block           = "10.0.0.0/16"
@@ -34,14 +46,12 @@ resource "aws_subnet" "subnet_2" {
 
 resource "aws_internet_gateway" "igw" {
   vpc_id = aws_vpc.main_vpc.id
-
-  tags = { Name = "MainIGW" }
+  tags   = { Name = "MainIGW" }
 }
 
 resource "aws_route_table" "main_route_table" {
   vpc_id = aws_vpc.main_vpc.id
-
-  tags = { Name = "MainRouteTable" }
+  tags   = { Name = "MainRouteTable" }
 }
 
 resource "aws_route" "internet_route" {
@@ -61,7 +71,7 @@ resource "aws_route_table_association" "subnet2_assoc" {
 }
 
 ############################################
-# Step 2: Security Groups
+# Security Group
 ############################################
 resource "aws_security_group" "web_sg" {
   name        = "web_sg"
@@ -111,7 +121,7 @@ resource "aws_security_group" "web_sg" {
 }
 
 ############################################
-# Step 3: Generate Key Pair for EC2
+# EC2 Key Pair
 ############################################
 resource "tls_private_key" "deployer" {
   algorithm = "RSA"
@@ -129,21 +139,18 @@ resource "local_file" "private_key" {
   file_permission = "0400"
 }
 
-
 ############################################
-# Step 4: IAM Role and Instance Profile
+# IAM Role & Instance Profile
 ############################################
 resource "aws_iam_role" "ec2_role" {
   name = "ec2_role"
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [
-      {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
-        Principal = { Service = "ec2.amazonaws.com" }
-      }
-    ]
+    Statement = [{
+      Action   = "sts:AssumeRole"
+      Effect   = "Allow"
+      Principal = { Service = "ec2.amazonaws.com" }
+    }]
   })
 }
 
@@ -152,13 +159,11 @@ resource "aws_iam_role_policy" "ec2_policy" {
   role   = aws_iam_role.ec2_role.id
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [
-      {
-        Action   = "s3:*"
-        Effect   = "Allow"
-        Resource = "*"
-      }
-    ]
+    Statement = [{
+      Action   = "s3:*"
+      Effect   = "Allow"
+      Resource = "*"
+    }]
   })
 }
 
@@ -168,10 +173,10 @@ resource "aws_iam_instance_profile" "ec2_profile" {
 }
 
 ############################################
-# Step 5: EC2 Instance
+# EC2 Instance
 ############################################
 resource "aws_instance" "web_server" {
-  ami                    = "ami-0cbe896ecf507b2a4" # Ubuntu 20.04 example
+  ami                    = "ami-0cbe896ecf507b2a4"
   instance_type          = "t3.micro"
   subnet_id              = aws_subnet.subnet_1.id
   vpc_security_group_ids = [aws_security_group.web_sg.id]
@@ -182,7 +187,7 @@ resource "aws_instance" "web_server" {
 }
 
 ############################################
-# Step 6: RDS MySQL Instance
+# RDS MySQL
 ############################################
 resource "aws_db_subnet_group" "main_db_subnet_group" {
   name       = "main-db-subnet-group"
@@ -207,7 +212,7 @@ resource "aws_db_instance" "main_db" {
 }
 
 ############################################
-# Step 7: Ansible Inventory
+# Ansible Inventory
 ############################################
 resource "local_file" "ansible_inventory" {
   content = <<EOT
@@ -221,7 +226,7 @@ EOT
 }
 
 ############################################
-# Step 8: Outputs
+# Outputs
 ############################################
 output "ec2_public_ip" {
   value = aws_instance.web_server.public_ip
