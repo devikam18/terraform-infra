@@ -2,12 +2,7 @@
 # Terraform Backend
 ############################################
 terraform {
-  backend "s3" {
-    bucket         = ""   # matches bootstrap
-    key            = "infra/terraform.tfstate"
-    region         = "ap-south-2"
-    dynamodb_table = ""
-  }
+  backend "s3" {}
 }
 
 ############################################
