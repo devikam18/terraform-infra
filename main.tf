@@ -2,9 +2,8 @@
 # Terraform Backend
 ############################################
 terraform {
-  backend "s3" {}
+  backend "s3" {}   # Keep it empty; values are passed dynamically via -backend-config
 }
-
 ############################################
 # Provider
 ############################################
