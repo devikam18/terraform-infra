@@ -37,7 +37,7 @@ jobs:
         working-directory: terraform-bootstrap
         run: terraform init
         
-       - name: Terraform plan
+      - name: Terraform plan
         working-directory: terraform-bootstrap
         run: terraform plan -out=tfplan
 
