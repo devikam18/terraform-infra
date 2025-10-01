@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  terraform:
+  terraform-bootstrap:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -27,8 +27,9 @@ jobs:
       - name: Terraform Apply
         working-directory: terraform-bootstrap
         run: terraform apply -auto-approve
-        
+
       - name: Save backend info to file
+        working-directory: terraform-bootstrap
         run: |
           echo "S3_BUCKET=$(terraform output -raw s3_bucket_name)" > backend.env
           echo "DYNAMO_TABLE=$(terraform output -raw dynamodb_table_name)" >> backend.env
@@ -37,4 +38,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: terraform-backend
-          path: backend.env
+          path: terraform-bootstrap/backend.env
