@@ -1,8 +1,8 @@
 name: Terraform Destroy
 
 on:
-  workflow_dispatch:  # Manual trigger from GitHub UI
-  repository_dispatch:  # Can be triggered from orchestrator.yml
+  workflow_dispatch:
+  repository_dispatch:
     types: [destroy-terraform]
 
 jobs:
@@ -33,10 +33,19 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      # 4️⃣ Terraform Destroy (bootstrap resources first if needed)
+      # 4️⃣ Terraform Init + Destroy - Bootstrap
+      - name: Terraform Init - Bootstrap
+        working-directory: terraform-bootstrap
+        run: terraform init -input=false
+
       - name: Terraform Destroy - Bootstrap
-        working-directory: terraform/terraform-bootstrap
+        working-directory: terraform-bootstrap
         run: terraform destroy -auto-approve
+
+      # 5️⃣ Terraform Init + Destroy - Main Infra
+      - name: Terraform Init - Main Infra
+        working-directory: terraform  # <- Correct path
+        run: terraform init -input=false
 
       - name: Terraform Destroy - Main Infra
         working-directory: terraform
