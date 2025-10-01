@@ -33,14 +33,6 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      ############################################
-      # 4. Terraform Bootstrap (Optional)
-      ############################################
-      - name: Terraform Init & Apply - Bootstrap
-        working-directory: terraform-bootstrap
-        run: |
-          terraform init
-          terraform apply -auto-approve
 
       ############################################
       # 5. Terraform Main Infrastructure
