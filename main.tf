@@ -3,10 +3,10 @@
 ############################################
 terraform {
   backend "s3" {
-    bucket         = "my-terraform-state-bucket-demo"   # matches bootstrap
+    bucket         = ""   # matches bootstrap
     key            = "infra/terraform.tfstate"
     region         = "ap-south-2"
-    dynamodb_table = "terraform-locks-demo"
+    dynamodb_table = ""
   }
 }
 
