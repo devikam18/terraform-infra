@@ -4,8 +4,11 @@ on:
   workflow_dispatch:
 
 jobs:
-  terraform-bootstrap:
+  bootstrap:
     runs-on: ubuntu-latest
+    outputs:
+      s3_bucket: ${{ steps.export_backend.outputs.s3_bucket }}
+      dynamo_table: ${{ steps.export_backend.outputs.dynamo_table }}
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -20,22 +23,19 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
-      - name: Terraform Init
-        working-directory: terraform-bootstrap
-        run: terraform init
-
-      - name: Terraform Apply
-        working-directory: terraform-bootstrap
-        run: terraform apply -auto-approve
-
-      - name: Save backend info to file
+      - name: Terraform Init & Apply
         working-directory: terraform-bootstrap
         run: |
-          echo "S3_BUCKET=$(terraform output -raw s3_bucket_name)" > backend.env
-          echo "DYNAMO_TABLE=$(terraform output -raw dynamodb_table_name)" >> backend.env
+          terraform init
+          terraform apply -auto-approve
 
-      - name: Upload backend artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: terraform-backend
-          path: terraform-bootstrap/backend.env
+      - name: Export backend variables
+        id: export_backend
+        working-directory: terraform-bootstrap
+        run: |
+          S3_BUCKET=$(terraform output -raw s3_bucket_name)
+          DYNAMO_TABLE=$(terraform output -raw dynamodb_table_name)
+          echo "S3_BUCKET=$S3_BUCKET" >> $GITHUB_ENV
+          echo "DYNAMO_TABLE=$DYNAMO_TABLE" >> $GITHUB_ENV
+          echo "::set-output name=s3_bucket::$S3_BUCKET"
+          echo "::set-output name=dynamo_table::$DYNAMO_TABLE"
