@@ -20,9 +20,18 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
-      - name: Terraform Init
+      - name: Terraform Init with Backend
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ secrets.S3_BUCKET }}" \
+            -backend-config="dynamodb_table=${{ secrets.DYNAMO_TABLE }}" \
+            -backend-config="region=ap-south-2" \
+            -backend-config="key=infra/terraform.tfstate"
+
+
+      - name: Terraform plan
        
-        run: terraform init
+        run: terraform plan
 
       - name: Terraform Apply
         
