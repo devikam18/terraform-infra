@@ -20,18 +20,29 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
+      - name: Download backend artifact from bootstrap
+        uses: actions/download-artifact@v4
+        with:
+          name: terraform-backend
+          path: terraform-bootstrap
+
+      - name: Load backend variables
+        run: |
+          source terraform-bootstrap/backend.env
+          echo "Backend S3 bucket: $S3_BUCKET"
+          echo "Backend DynamoDB table: $DYNAMO_TABLE"
+
       - name: Terraform Init with Backend
         run: |
-          terraform init \
-             -backend-config="bucket=${{ secrets.S3_BUCKET }}" \
-             -backend-config="dynamodb_table=${{ secrets.DYNAMO_TABLE }}" \
-             -backend-config="region=ap-south-2" \
-             -backend-config="key=infra/terraform.tfstate"
-             
-      - name: Terraform plan
-       
+          source terraform-bootstrap/backend.env
+          terraform init -reconfigure \
+            -backend-config="bucket=$S3_BUCKET" \
+            -backend-config="dynamodb_table=$DYNAMO_TABLE" \
+            -backend-config="region=ap-south-2" \
+            -backend-config="key=infra/terraform.tfstate"
+
+      - name: Terraform Plan
         run: terraform plan
 
       - name: Terraform Apply
-        
         run: terraform apply -auto-approve
