@@ -35,7 +35,11 @@ jobs:
         run: |
           S3_BUCKET=$(terraform output -raw s3_bucket_name)
           DYNAMO_TABLE=$(terraform output -raw dynamodb_table_name)
+          
+          # Save to GitHub environment for downstream jobs/workflows
           echo "S3_BUCKET=$S3_BUCKET" >> $GITHUB_ENV
           echo "DYNAMO_TABLE=$DYNAMO_TABLE" >> $GITHUB_ENV
-          echo "::set-output name=s3_bucket::$S3_BUCKET"
-          echo "::set-output name=dynamo_table::$DYNAMO_TABLE"
+          
+          # Set outputs (without deprecated set-output)
+          echo "s3_bucket=$S3_BUCKET" >> $GITHUB_OUTPUT
+          echo "dynamo_table=$DYNAMO_TABLE" >> $GITHUB_OUTPUT
