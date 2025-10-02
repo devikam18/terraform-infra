@@ -183,6 +183,7 @@ resource "aws_instance" "web_server" {
   vpc_security_group_ids = [aws_security_group.web_sg.id]
   key_name               = aws_key_pair.deployer.key_name
   iam_instance_profile   = aws_iam_instance_profile.ec2_profile_latest.name
+  associate_public_ip_address = true  
 
   tags = { Name = "web-server" }
 }
