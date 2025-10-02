@@ -6,9 +6,7 @@ on:
 jobs:
   bootstrap:
     runs-on: ubuntu-latest
-    outputs:
-      s3_bucket: ${{ steps.export_backend.outputs.s3_bucket }}
-      dynamo_table: ${{ steps.export_backend.outputs.dynamo_table }}
+  
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -29,17 +27,4 @@ jobs:
           terraform init
           terraform apply -auto-approve
 
-      - name: Export backend variables
-        id: export_backend
-        working-directory: terraform-bootstrap
-        run: |
-          S3_BUCKET=$(terraform output -raw s3_bucket_name)
-          DYNAMO_TABLE=$(terraform output -raw dynamodb_table_name)
-          
-          # Save to GitHub environment for downstream jobs/workflows
-          echo "S3_BUCKET=$S3_BUCKET" >> $GITHUB_ENV
-          echo "DYNAMO_TABLE=$DYNAMO_TABLE" >> $GITHUB_ENV
-          
-          # Set outputs (without deprecated set-output)
-          echo "s3_bucket=$S3_BUCKET" >> $GITHUB_OUTPUT
-          echo "dynamo_table=$DYNAMO_TABLE" >> $GITHUB_OUTPUT
+     
