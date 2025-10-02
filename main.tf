@@ -3,7 +3,11 @@
 ############################################
 terraform {
   backend "s3" {
-    region = "ap-south-2"  # placeholder, can be overridden
+    bucket         = "my-terraform-state-bucket-dev"
+    key            = "infra/terraform.tfstate"
+    region         = "ap-south-2"
+    dynamodb_table = "terraform-locks-dev"
+    encrypt        = true
   }
 }
 ############################################
