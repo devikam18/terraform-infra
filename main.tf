@@ -121,25 +121,6 @@ resource "aws_security_group" "web_sg" {
 }
 
 ############################################
-# EC2 Key Pair
-############################################
-resource "tls_private_key" "deployer" {
-  algorithm = "RSA"
-  rsa_bits  = 4096
-}
-
-resource "aws_key_pair" "deployer" {
-  key_name   = "deployer-key"
-  public_key = tls_private_key.deployer.public_key_openssh
-}
-
-resource "local_file" "private_key" {
-  content         = tls_private_key.deployer.private_key_pem
-  filename        = "deployer.pem"
-  file_permission = "0400"
-}
-
-############################################
 # IAM Role & Instance Profile
 ############################################
 resource "aws_iam_role" "ec2_role" {
@@ -181,7 +162,7 @@ resource "aws_instance" "web_server" {
   instance_type          = "t3.micro"
   subnet_id              = aws_subnet.subnet_1.id
   vpc_security_group_ids = [aws_security_group.web_sg.id]
-  key_name               = aws_key_pair.deployer.key_name
+  key_name               = "deployer-new"
   iam_instance_profile   = aws_iam_instance_profile.ec2_profile_latest.name
   associate_public_ip_address = true  
 
