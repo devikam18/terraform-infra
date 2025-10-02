@@ -20,6 +20,8 @@ jobs:
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
+         with:
+          terraform_version: 1.9.5
 
       - name: Terraform Init & Apply
         working-directory: terraform-bootstrap
