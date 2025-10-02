@@ -14,13 +14,6 @@ variable "environment" {
 }
 
 ############################################
-# Random Suffix
-############################################
-resource "random_id" "suffix" {
-  byte_length = 4
-}
-
-############################################
 # Provider
 ############################################
 provider "aws" {
@@ -31,7 +24,7 @@ provider "aws" {
 # S3 Bucket for Terraform State
 ############################################
 resource "aws_s3_bucket" "terraform_state" {
-  bucket = "${var.bucket_name_prefix}-${var.environment}-${random_id.suffix.hex}"
+  bucket = "${var.bucket_name_prefix}-${var.environment}"
 
   tags = {
     Name        = "terraform-state"
@@ -63,7 +56,7 @@ resource "aws_s3_bucket_public_access_block" "public_access" {
 # DynamoDB Table for Locking
 ############################################
 resource "aws_dynamodb_table" "terraform_locks" {
-  name         = "${var.dynamodb_table_name_prefix}-${var.environment}-${random_id.suffix.hex}"
+  name         = "${var.dynamodb_table_name_prefix}-${var.environment}"
   hash_key     = "LockID"
   billing_mode = "PAY_PER_REQUEST"
 
