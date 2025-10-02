@@ -1,46 +1,63 @@
-name: Terraform Infra Apply
+name: Terraform CI/CD
 
 on:
-  workflow_run:
-    workflows: ["Terraform Bootstrap Apply"]
-    types:
-      - completed
+  workflow_dispatch:   # manual trigger from GitHub Actions UI
 
 jobs:
   terraform:
+    name: Terraform Plan & Apply
     runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v3
 
-      - name: Configure AWS
+    env:
+      AWS_REGION: ap-south-2
+      TF_IN_AUTOMATION: "true"
+
+    steps:
+      ########################################
+      # 1. Checkout the repository
+      ########################################
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      ########################################
+      # 2. Configure AWS credentials
+      ########################################
+      - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ap-south-2
 
+      ########################################
+      # 3. Setup Terraform
+      ########################################
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.5
 
-      - name: Initialize Terraform Backend
-        run: |
-          # Get outputs from the triggering workflow
-          S3_BUCKET=${{ github.event.workflow_run.outputs.s3_bucket }}
-          DYNAMO_TABLE=${{ github.event.workflow_run.outputs.dynamo_table }}
+      ########################################
+      # 4. Init Terraform (Remote Backend)
+      ########################################
+      - name: Terraform Init
+        run: terraform init -input=false
 
-          echo "Using backend S3 bucket: $S3_BUCKET"
-          echo "Using backend DynamoDB table: $DYNAMO_TABLE"
+      ########################################
+      # 5. Validate Terraform code
+      ########################################
+      - name: Terraform Validate
+        run: terraform validate
 
-          terraform init -reconfigure \
-            -backend-config="bucket=$S3_BUCKET" \
-            -backend-config="dynamodb_table=$DYNAMO_TABLE" \
-            
-            -backend-config="key=infra/terraform.tfstate"
-
+      ########################################
+      # 6. Terraform Plan
+      ########################################
       - name: Terraform Plan
-        run: terraform plan
+        run: terraform plan -out=tfplan
 
+      ########################################
+      # 7. Terraform Apply (auto-approve)
+      ########################################
       - name: Terraform Apply
-        run: terraform apply -auto-approve
-
+        if: github.ref == 'refs/heads/main'   # apply only on main branch
+        run: terraform apply -auto-approve tfplan
