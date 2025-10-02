@@ -6,7 +6,7 @@ terraform {
     bucket         = "my-terraform-backend-bucket-latest-dev"
     key            = "infra/terraform.tfstate"
     region         = "ap-south-2"
-    dynamodb_table = "terraform-dynamo-lock-latest-dev"
+    dynamodb_table = "terraform-dynamo-latest-lock-dev"
     encrypt        = true
   }
 }
