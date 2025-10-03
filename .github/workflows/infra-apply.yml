@@ -67,5 +67,5 @@ jobs:
       - name: Get Terraform public IP
         id: tf
         run: |
-          echo "WEB_IP=$(terraform output -raw web_public_ip)" >> $GITHUB_ENV
+          echo "WEB_IP=$(terraform output -raw ec2_public_ip)" >> $GITHUB_ENV
 
