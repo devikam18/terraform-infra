@@ -1,6 +1,8 @@
 name: Terraform CI/CD
 
+
 on:
+  # Auto trigger
   pull_request:
     types: [opened, synchronize, reopened]
     branches:
