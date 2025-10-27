@@ -3,9 +3,9 @@ name: Auto PR Creation on Commit
 on:
   push:
     branches:
-      - feature/*   # triggers only when pushing to feature branches
+      - developer   # triggers only when pushing to feature branches
 
-      
+
 jobs:
   create-pr:
     runs-on: ubuntu-latest
