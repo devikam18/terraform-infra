@@ -5,6 +5,7 @@ on:
     branches:
       - feature/*   # triggers only when pushing to feature branches
 
+      
 jobs:
   create-pr:
     runs-on: ubuntu-latest
