@@ -1,111 +1,147 @@
-name: Terraform CI/CD
-
+name: Terraform Automation
 
 on:
-  # Auto trigger
-  pull_request:
-    types: [opened, synchronize, reopened]
+  push:
     branches:
-      - main
-
+      - developer
+  pull_request:
+    branches:
+      - developer
   issue_comment:
     types: [created]
-
-  workflow_dispatch:
 
 permissions:
   contents: write
   pull-requests: write
-  issues: write
+  id-token: write
 
 jobs:
-  terraform-plan:
-    if: >
-      (github.event_name == 'pull_request') ||
-      (github.event_name == 'issue_comment' && contains(toLower(github.event.comment.body), '/plan'))
+  terraform:
     runs-on: ubuntu-latest
-    name: Terraform Plan
+
+    if: |
+      github.event_name == 'push' ||
+      (github.event_name == 'issue_comment' &&
+       github.event.issue.pull_request != null &&
+       (startsWith(github.event.comment.body, '/plan') || startsWith(github.event.comment.body, '/apply')))
+
+    env:
+      AWS_REGION: ap-south-2
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
     steps:
-      - name: Checkout Repository
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
-
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ap-south-2
+          terraform_version: 1.9.5
 
+      # 1️⃣ Create Pull Request automatically on push
+      - name: Create Pull Request
+        if: github.event_name == 'push'
+        id: create_pr
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GTHUB_TOKEN }}
+          branch: developer
+          title: "🪄 Terraform Changes Detected"
+          body: "Automated PR created for Terraform plan/apply."
+          commit-message: "chore: Terraform update"
+          base: main
+          delete-branch: false
+
+      # 2️⃣ Find PR number for comment posting
+      - name: Find existing PR number
+        id: find_pr
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GTHUB_TOKEN }}
+          script: |
+            const event = context.payload;
+            let prNumber = null;
+
+            if (event.pull_request) {
+              prNumber = event.pull_request.number;
+            } else if (event.issue && event.issue.pull_request) {
+              prNumber = event.issue.number;
+            } else {
+              const prs = await github.rest.pulls.list({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                head: `${context.repo.owner}:developer`,
+                state: 'open'
+              });
+              if (prs.data.length > 0) prNumber = prs.data[0].number;
+            }
+
+            if (prNumber) {
+              core.setOutput("pr_number", prNumber);
+            } else {
+              core.setFailed("❌ No pull request found for posting comment.");
+            }
+
+      # 3️⃣ Terraform Init & Plan
       - name: Terraform Init
         run: terraform init
 
+      - name: Terraform Validate
+        run: terraform validate
+
       - name: Terraform Plan
-        id: plan
-        run: terraform plan -out=tfplan.out
+        run: terraform plan -no-color -out=tfplan | tee plan.log
 
-      - name: Upload Plan Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: terraform-plan
-          path: tfplan.out
-
-      - name: Comment Plan Output on PR
+      # 4️⃣ Post Plan Result to PR
+      - name: Post Plan Result to PR
+        if: github.event_name == 'push' || (github.event_name == 'issue_comment' && startsWith(github.event.comment.body, '/plan'))
         uses: actions/github-script@v7
         with:
-          github-token: ${{ secrets.GH_PAT }}
+          github-token: ${{ secrets.GTHUB_TOKEN }}
           script: |
             const fs = require('fs');
-            const { execSync } = require('child_process');
-            const planOutput = execSync('terraform show -no-color tfplan.out').toString();
-            const commentBody = `### Terraform Plan 📜\n\`\`\`\n${planOutput.substring(0, 65000)}\n\`\`\`\n✅ To apply these changes, comment **/apply** below.`;
-            await github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: commentBody
-            });
+            const plan = fs.readFileSync('plan.log', 'utf8').slice(0, 65000);
+            const pr_number = parseInt(process.env.PR_NUMBER, 10);
 
-  terraform-apply:
-    if: >
-      github.event_name == 'issue_comment' && contains(toLower(github.event.comment.body), '/apply')
-    runs-on: ubuntu-latest
-    name: Terraform Apply
-    needs: terraform-plan
+            if (!pr_number) {
+              core.setFailed("❌ PR number not found.");
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pr_number,
+                body: `🪄 **Terraform Plan Result:**\n\`\`\`\n${plan}\n\`\`\`\n💬 Comment **/apply** to deploy these changes.`
+              });
+            }
+        env:
+          PR_NUMBER: ${{ steps.find_pr.outputs.pr_number }}
 
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ap-south-2
-
-      - name: Download Plan Artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: terraform-plan
-
+      # 5️⃣ Terraform Apply (triggered by /apply comment)
       - name: Terraform Apply
-        run: terraform apply -auto-approve tfplan.out
+        if: github.event_name == 'issue_comment' && startsWith(github.event.comment.body, '/apply')
+        run: terraform apply -auto-approve tfplan | tee apply.log
 
-      - name: Comment Apply Success
+      # 6️⃣ Post Apply Result to PR
+      - name: Post Apply Result
+        if: github.event_name == 'issue_comment' && startsWith(github.event.comment.body, '/apply')
         uses: actions/github-script@v7
         with:
-          github-token: ${{ secrets.GH_PAT }}
+          github-token: ${{ secrets.GTHUB_TOKEN }}
           script: |
-            await github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: '🚀 Terraform Apply completed successfully!'
-            });
+            const fs = require('fs');
+            const apply = fs.readFileSync('apply.log', 'utf8').slice(0, 65000);
+            const pr_number = parseInt(process.env.PR_NUMBER, 10);
+
+            if (!pr_number) {
+              core.setFailed("❌ PR number not found for apply result.");
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pr_number,
+                body: `✅ **Terraform Apply Completed Successfully!** 🚀\n\`\`\`\n${apply}\n\`\`\``
+              });
+            }
+        env:
+          PR_NUMBER: ${{ steps.find_pr.outputs.pr_number }}
