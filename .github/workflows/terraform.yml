@@ -1,0 +1,137 @@
+name: Terraform Automation
+
+on:
+  push:
+    branches:
+      - test
+  pull_request:
+    branches:
+      - test
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+
+    if: |
+      github.event_name == 'push' ||
+      (github.event_name == 'issue_comment' &&
+       github.event.issue.pull_request != null &&
+       (startsWith(github.event.comment.body, '/plan') || startsWith(github.event.comment.body, '/apply')))
+
+    env:
+      AWS_REGION: ap-south-2
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.5
+
+      # 1️⃣ Check if PR already exists for 'test' branch
+      - name: Check if PR exists
+        id: check_pr
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GTHUB_TOKEN }}
+          script: |
+            const prs = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              head: `${context.repo.owner}:test`,
+              state: 'open'
+            });
+            if (prs.data.length > 0) {
+              core.setOutput("exists", "true");
+              core.setOutput("pr_number", prs.data[0].number);
+            } else {
+              core.setOutput("exists", "false");
+            }
+              
+
+      # 2️⃣ Create PR only if not exists
+      - name: Create Pull Request
+        if: steps.check_pr.outputs.exists == 'false' && github.event_name == 'push'
+        id: create_pr
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GTHUB_TOKEN }}
+          branch: test
+          base: developer
+          title: "🪄 Terraform Changes Detected"
+          body: "Automated PR created for Terraform plan/apply."
+          commit-message: "chore: Terraform update"
+          delete-branch: false
+
+      # 3️⃣ Terraform Init & Plan
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Terraform Plan
+        run: terraform plan -no-color -out=tfplan | tee plan.log
+
+      # 4️⃣ Post Plan Result to PR
+      - name: Post Plan Result to PR
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GTHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const plan = fs.readFileSync('plan.log', 'utf8').slice(0, 65000);
+            const event = context.payload;
+            let prNumber = null;
+
+            if (event.pull_request) {
+              prNumber = event.pull_request.number;
+            } else if (event.issue && event.issue.pull_request) {
+              prNumber = event.issue.number;
+            } else if ("${{ steps.check_pr.outputs.exists }}" === "true") {
+              prNumber = parseInt("${{ steps.check_pr.outputs.pr_number }}");
+            }
+
+            if (!prNumber) {
+              core.setFailed("❌ No pull request found for posting comment.");
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                body: `🪄 **Terraform Plan Result:**\n\`\`\`\n${plan}\n\`\`\`\n💬 Comment **/apply** to deploy these changes.`
+              });
+            }
+
+      # 5️⃣ Terraform Apply only when /apply comment is added
+      - name: Terraform Apply
+        if: github.event_name == 'issue_comment' && startsWith(github.event.comment.body, '/apply')
+        run: terraform apply -auto-approve tfplan | tee apply.log
+
+      # 6️⃣ Post Apply Result to PR
+      - name: Post Apply Result
+        if: github.event_name == 'issue_comment' && startsWith(github.event.comment.body, '/apply')
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GTHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const apply = fs.readFileSync('apply.log', 'utf8').slice(0, 65000);
+            const issue_number = context.payload.issue?.number || context.payload.pull_request?.number;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number,
+              body: `✅ **Terraform Apply Completed Successfully!** 🚀\n\`\`\`\n${apply}\n\`\`\``
+            });
