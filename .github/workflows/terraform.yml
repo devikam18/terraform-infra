@@ -1,4 +1,4 @@
-name: Terraform Automation
+name: Terraform Plan & Apply Automation
 
 on:
   push:
@@ -6,32 +6,26 @@ on:
       - test
   pull_request:
     branches:
-      - test
+      - main
   issue_comment:
     types: [created]
 
 permissions:
   contents: write
   pull-requests: write
-  id-token: write
+  issues: write
+
+env:
+  AWS_REGION: ap-south-2
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
 jobs:
   terraform:
     runs-on: ubuntu-latest
 
-    if: |
-      github.event_name == 'push' ||
-      (github.event_name == 'issue_comment' &&
-       github.event.issue.pull_request != null &&
-       (startsWith(github.event.comment.body, '/plan') || startsWith(github.event.comment.body, '/apply')))
-
-    env:
-      AWS_REGION: ap-south-2
-      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-
     steps:
-      - name: Checkout repository
+      - name: Checkout Code
         uses: actions/checkout@v4
 
       - name: Setup Terraform
@@ -39,127 +33,93 @@ jobs:
         with:
           terraform_version: 1.9.5
 
-      # 🧩 Step 1: Auto-create PR (keep open, don’t delete or close)
+      # 🧱 Automatically Create or Update PR
       - name: Create or Update Pull Request
         if: github.event_name == 'push'
         id: create_pr
         uses: peter-evans/create-pull-request@v6
         with:
-          token: ${{ secrets.GTHUB_TOKEN }}
+          token: ${{ secrets.GITHUB_TOKEN }}
           branch: test
           base: main
           title: "🪄 Terraform Infrastructure Changes"
           body: |
             This PR contains automated Terraform plan and apply steps.
-            It will remain open until all changes are applied.
+            Comment `/plan` to preview or `/apply` to deploy.
           commit-message: "chore: terraform auto update"
           delete-branch: false
-          draft: false
+          branch-suffix: none
+          allow-empty-commit: true
           labels: terraform, automation
           assignees: ${{ github.actor }}
-          # Prevents closing old PRs
-          update-existing-pr: true
-          keep-repo-branches: true
 
-      # 🧩 Step 2: Find PR number dynamically
-      - name: Find PR number
-        id: find_pr
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.GTHUB_TOKEN }}
-          script: |
-            const event = context.payload;
-            let prNumber = null;
-            
-            if (event.pull_request) {
-              prNumber = event.pull_request.number;
-            } else if (event.issue && event.issue.pull_request) {
-              prNumber = event.issue.number;
-            } else {
-              const prs = await github.rest.pulls.list({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                head: `${context.repo.owner}:${context.ref.replace('refs/heads/', '')}`,
-                state: 'open'
-              });
-              if (prs.data.length > 0) prNumber = prs.data[0].number;
-            }
+      # 🧩 Detect Action Type
+      - name: Determine Trigger Type
+        id: detect
+        run: |
+          if [[ "${{ github.event_name }}" == "issue_comment" ]]; then
+            COMMENT_BODY="${{ github.event.comment.body }}"
+            COMMENT_BODY_LOWER=$(echo "$COMMENT_BODY" | tr '[:upper:]' '[:lower:]')
+            if [[ "$COMMENT_BODY_LOWER" == *"/apply"* ]]; then
+              echo "action=apply" >> $GITHUB_ENV
+            elif [[ "$COMMENT_BODY_LOWER" == *"/plan"* ]]; then
+              echo "action=plan" >> $GITHUB_ENV
+            else
+              echo "action=none" >> $GITHUB_ENV
+            fi
+          else
+            echo "action=auto" >> $GITHUB_ENV
+          fi
 
-            if (prNumber) {
-              core.setOutput("pr_number", prNumber);
-              console.log(`✅ Found PR #${prNumber}`);
-            } else {
-              console.log("⚠️ No open PR found for this branch.");
-            }
-
-      # 🧩 Step 3: Terraform Plan
+      # 🧠 Terraform Init
       - name: Terraform Init
-        run: terraform init
+        run: terraform init -input=false -no-color
 
-      - name: Terraform Validate
-        run: terraform validate
-
+      # 📋 Terraform Plan
       - name: Terraform Plan
-        run: terraform plan -no-color -out=tfplan | tee plan.log
+        if: env.action == 'plan' || env.action == 'auto'
+        id: plan
+        run: terraform plan -input=false -no-color | tee plan.log
 
-      # 🧩 Step 4: Post Plan Result
-      - name: Post Plan Result to PR
+      # 💬 Post Plan Result in PR Comment
+      - name: Post Plan Comment
+        if: env.action == 'plan' || env.action == 'auto'
         uses: actions/github-script@v7
         with:
-          github-token: ${{ secrets.GTHUB_TOKEN }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const fs = require('fs');
-            const planFile = 'plan.log';
-            const prNumber = process.env.PR_NUMBER;
-
-            if (!fs.existsSync(planFile)) {
-              console.log("⚠️ plan.log not found — skipping comment.");
-            } else if (!prNumber) {
-              console.log("⚠️ No PR number found — skipping comment.");
-            } else {
-              const plan = fs.readFileSync(planFile, 'utf8').slice(0, 65000);
+            const plan = fs.readFileSync('plan.log', 'utf8').slice(0, 65000);
+            const pr = context.payload.pull_request || context.issue;
+            if (pr) {
               await github.rest.issues.createComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                issue_number: parseInt(prNumber, 10),
-                body: `🪄 **Terraform Plan Result:**\n\`\`\`\n${plan}\n\`\`\`\n💬 Comment **/apply** to trigger deployment.`
+                issue_number: pr.number,
+                body: `🪄 **Terraform Plan Result:**\n\`\`\`\n${plan}\n\`\`\`\n💬 Comment **/apply** to deploy these changes.`
               });
             }
-        env:
-          PR_NUMBER: ${{ steps.find_pr.outputs.pr_number }}
 
-      # 🧩 Step 5: Terraform Apply (manual or auto)
+      # 🚀 Terraform Apply
       - name: Terraform Apply
-        if: |
-          (github.event_name == 'issue_comment' && startsWith(github.event.comment.body, '/apply')) ||
-          (github.event_name == 'push' && github.ref == 'refs/heads/test')
-        run: terraform apply -auto-approve tfplan | tee apply.log
+        if: env.action == 'apply' || github.event_name == 'pull_request'
+        id: apply
+        run: terraform apply -auto-approve -input=false -no-color | tee apply.log
 
-      # 🧩 Step 6: Post Apply Result
-      - name: Post Apply Result
-        if: |
-          (github.event_name == 'issue_comment' && startsWith(github.event.comment.body, '/apply')) ||
-          (github.event_name == 'push' && github.ref == 'refs/heads/test')
+      # ✅ Post Apply Comment
+      - name: Post Apply Comment
+        if: env.action == 'apply' || github.event_name == 'pull_request'
         uses: actions/github-script@v7
         with:
-          github-token: ${{ secrets.GTHUB_TOKEN }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const fs = require('fs');
-            const applyLog = 'apply.log';
-            const prNumber = process.env.PR_NUMBER;
-
-            if (!fs.existsSync(applyLog)) {
-              console.log("⚠️ No apply.log found — skipping comment.");
-            } else if (!prNumber) {
-              console.log("⚠️ No PR number found — skipping comment.");
-            } else {
-              const apply = fs.readFileSync(applyLog, 'utf8').slice(0, 65000);
+            const apply = fs.readFileSync('apply.log', 'utf8').slice(0, 65000);
+            const pr = context.payload.pull_request || context.issue;
+            if (pr) {
               await github.rest.issues.createComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                issue_number: parseInt(prNumber, 10),
+                issue_number: pr.number,
                 body: `🚀 **Terraform Apply Result:**\n\`\`\`\n${apply}\n\`\`\`\n✅ Deployment completed successfully!`
               });
-            }
-        env:
-          PR_NUMBER: ${{ steps.find_pr.outputs.pr_number }}
