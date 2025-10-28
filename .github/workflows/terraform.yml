@@ -3,11 +3,9 @@ name: Terraform Automation
 on:
   push:
     branches:
-      - main
-      - test
+      - test  # auto trigger for 'test' branch
   pull_request:
     branches:
-      - main
       - test
   issue_comment:
     types: [created]
@@ -15,12 +13,17 @@ on:
 permissions:
   contents: write
   pull-requests: write
-  issues: write
   id-token: write
 
 jobs:
   terraform:
     runs-on: ubuntu-latest
+
+    if: |
+      github.event_name == 'push' ||
+      (github.event_name == 'issue_comment' &&
+       github.event.issue.pull_request != null &&
+       (startsWith(github.event.comment.body, '/plan') || startsWith(github.event.comment.body, '/apply')))
 
     env:
       AWS_REGION: ap-south-2
@@ -36,83 +39,119 @@ jobs:
         with:
           terraform_version: 1.9.5
 
-      # 🔹 Identify trigger type (push, /plan, /apply)
-      - name: Determine Trigger Type
-        id: trigger
-        run: |
-          if [[ "${{ github.event_name }}" == "issue_comment" ]]; then
-            comment=$(echo "${{ github.event.comment.body }}" | tr '[:upper:]' '[:lower:]')
-            if [[ "$comment" == "/plan" ]]; then
-              echo "action=plan" >> $GITHUB_ENV
-            elif [[ "$comment" == "/apply" ]]; then
-              echo "action=apply" >> $GITHUB_ENV
-            else
-              echo "action=none" >> $GITHUB_ENV
-            fi
-          else
-            echo "action=auto" >> $GITHUB_ENV
-          fi
+      # 🧩 Step 1: Auto-create PR on push
+      - name: Create Pull Request
+        if: github.event_name == 'push'
+        id: create_pr
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GTHUB_TOKEN }}
+          branch: test
+          base: main
+          title: "🪄 Terraform Infrastructure Changes"
+          body: "This PR contains automated Terraform plan and apply steps."
+          commit-message: "chore: terraform auto update"
+          delete-branch: false
 
-      # 🔹 Terraform Init
+      # 🧩 Step 2: Detect PR number dynamically
+      - name: Find PR number
+        id: find_pr
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GTHUB_TOKEN }}
+          script: |
+            const event = context.payload;
+            let prNumber = null;
+            
+            if (event.pull_request) {
+              prNumber = event.pull_request.number;
+            } else if (event.issue && event.issue.pull_request) {
+              prNumber = event.issue.number;
+            } else {
+              const prs = await github.rest.pulls.list({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                head: `${context.repo.owner}:${context.ref.replace('refs/heads/', '')}`,
+                state: 'open'
+              });
+              if (prs.data.length > 0) prNumber = prs.data[0].number;
+            }
+
+            if (prNumber) {
+              core.setOutput("pr_number", prNumber);
+              console.log(`✅ Found PR #${prNumber}`);
+            } else {
+              console.log("⚠️ No PR found for this branch/event.");
+            }
+
+      # 🧩 Step 3: Terraform Plan
       - name: Terraform Init
-        if: env.action == 'plan' || env.action == 'apply' || env.action == 'auto'
         run: terraform init
 
-      # 🔹 Terraform Validate
       - name: Terraform Validate
-        if: env.action == 'plan' || env.action == 'auto'
         run: terraform validate
 
-      # 🔹 Terraform Plan (auto + manual)
       - name: Terraform Plan
-        if: env.action == 'plan' || env.action == 'auto'
         run: terraform plan -no-color -out=tfplan | tee plan.log
 
-      # 🔹 Post Plan Output to PR or Push Log
-      - name: Post Plan Result to PR
-        if: env.action == 'plan' || env.action == 'auto'
+      # 🧩 Step 4: Post Plan Result to PR
+      - name: Post Plan Result
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GTHUB_TOKEN }}
           script: |
             const fs = require('fs');
-            const plan = fs.readFileSync('plan.log', 'utf8').slice(0, 65000);
-            const pr = context.payload.pull_request || context.issue;
-            if (pr) {
+            const planFile = 'plan.log';
+            const prNumber = process.env.PR_NUMBER;
+
+            if (!fs.existsSync(planFile)) {
+              console.log("⚠️ plan.log not found — skipping comment.");
+            } else if (!prNumber) {
+              console.log("⚠️ No PR number found — skipping comment.");
+            } else {
+              const plan = fs.readFileSync(planFile, 'utf8').slice(0, 65000);
               await github.rest.issues.createComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                issue_number: pr.number,
-                body: `🪄 **Terraform Plan Result:**\n\`\`\`\n${plan}\n\`\`\`\n💬 Comment **/apply** to deploy these changes.`
+                issue_number: parseInt(prNumber, 10),
+                body: `🪄 **Terraform Plan Result:**\n\`\`\`\n${plan}\n\`\`\`\n💬 Comment **/apply** to trigger deployment.`
               });
-            } else {
-              console.log("No PR found — plan posted in logs.");
             }
+        env:
+          PR_NUMBER: ${{ steps.find_pr.outputs.pr_number }}
 
-      # 🔹 Auto Apply (on push) OR Manual Apply (/apply)
+      # 🧩 Step 5: Terraform Apply (manual or auto)
       - name: Terraform Apply
         if: |
-             (env.action == 'apply' && github.ref == 'refs/heads/main') ||
-              (env.action == 'auto' && github.ref == 'refs/heads/test')
-        run: terraform apply -auto-approve -no-color | tee apply.log
+          (github.event_name == 'issue_comment' && startsWith(github.event.comment.body, '/apply')) ||
+          (github.event_name == 'push' && github.ref == 'refs/heads/test')
+        run: terraform apply -auto-approve tfplan | tee apply.log
 
-      # 🔹 Post Apply Output to PR
-      - name: Post Apply Result to PR
-        if: env.action == 'apply' || env.action == 'auto'
+      # 🧩 Step 6: Post Apply Result to PR
+      - name: Post Apply Result
+        if: |
+          (github.event_name == 'issue_comment' && startsWith(github.event.comment.body, '/apply')) ||
+          (github.event_name == 'push' && github.ref == 'refs/heads/test')
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GTHUB_TOKEN }}
           script: |
             const fs = require('fs');
-            const apply = fs.readFileSync('apply.log', 'utf8').slice(0, 65000);
-            const pr = context.payload.pull_request || context.issue;
-            if (pr) {
+            const applyLog = 'apply.log';
+            const prNumber = process.env.PR_NUMBER;
+
+            if (!fs.existsSync(applyLog)) {
+              console.log("⚠️ No apply.log found — skipping comment.");
+            } else if (!prNumber) {
+              console.log("⚠️ No PR number found — skipping comment.");
+            } else {
+              const apply = fs.readFileSync(applyLog, 'utf8').slice(0, 65000);
               await github.rest.issues.createComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                issue_number: pr.number,
+                issue_number: parseInt(prNumber, 10),
                 body: `🚀 **Terraform Apply Result:**\n\`\`\`\n${apply}\n\`\`\`\n✅ Deployment completed successfully!`
               });
-            } else {
-              console.log("No PR found — apply posted in logs.");
             }
+        env:
+          PR_NUMBER: ${{ steps.find_pr.outputs.pr_number }}
