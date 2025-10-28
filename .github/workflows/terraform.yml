@@ -1,128 +1,110 @@
-name: Terraform Plan & Apply Automation
+name: Terraform Auto Plan & Apply
 
 on:
   push:
     branches:
       - test
-  pull_request:
-    branches:
-      - main
   issue_comment:
     types: [created]
 
 permissions:
   contents: write
   pull-requests: write
-  issues: write
-
-env:
-  AWS_REGION: ap-south-2
-  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
 jobs:
   terraform:
     runs-on: ubuntu-latest
+    env:
+      AWS_REGION: ap-south-2
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
     steps:
-      - name: Checkout Code
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.9.5
+          terraform_version: 1.7.4
 
-      # 🧱 Automatically Create or Update PR
-      - name: Create or Update Pull Request
-        if: github.event_name == 'push'
-        id: create_pr
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Plan
+        run: terraform plan -out=tfplan.out
+
+      - name: Create or update Pull Request automatically
         uses: peter-evans/create-pull-request@v6
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          branch: test
+          branch: terraform-auto-update
           base: main
           title: "🪄 Terraform Infrastructure Changes"
           body: |
             This PR contains automated Terraform plan and apply steps.
-            💬 Comment `/plan` to preview or `/apply` to deploy.
+            Comment `/plan` to preview or `/apply` to deploy.
           commit-message: "chore: terraform auto update"
           delete-branch: false
-          branch-suffix: short-commit
+          branch-suffix: short-sha    # ✅ valid value
           labels: terraform, automation
-          assignees: ${{ github.actor }}
+          assignees: devikam18
           committer: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>
-          author: ${{ github.actor }} <${{ github.actor }}@users.noreply.github.com>
+          author: devikam18 <233266106+devikam18@users.noreply.github.com>
           draft: false
 
-      # 🧩 Detect Action Type
-      - name: Determine Trigger Type
-        id: detect
+  comment-trigger:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+      contents: write
+    if: github.event.issue.pull_request != null
+    steps:
+      - name: Check comment command
+        id: check
         run: |
-          if [[ "${{ github.event_name }}" == "issue_comment" ]]; then
-            COMMENT_BODY="${{ github.event.comment.body }}"
-            COMMENT_BODY_LOWER=$(echo "$COMMENT_BODY" | tr '[:upper:]' '[:lower:]')
-            if [[ "$COMMENT_BODY_LOWER" == *"/apply"* ]]; then
-              echo "action=apply" >> $GITHUB_ENV
-            elif [[ "$COMMENT_BODY_LOWER" == *"/plan"* ]]; then
-              echo "action=plan" >> $GITHUB_ENV
-            else
-              echo "action=none" >> $GITHUB_ENV
-            fi
+          comment="${{ github.event.comment.body }}"
+          if [[ "$comment" == "/plan" ]]; then
+            echo "command=plan" >> $GITHUB_OUTPUT
+          elif [[ "$comment" == "/apply" ]]; then
+            echo "command=apply" >> $GITHUB_OUTPUT
           else
-            echo "action=auto" >> $GITHUB_ENV
+            echo "command=none" >> $GITHUB_OUTPUT
           fi
 
-      # 🧠 Terraform Init
+      - name: Checkout repository
+        if: steps.check.outputs.command != 'none'
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        if: steps.check.outputs.command != 'none'
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.7.4
+
       - name: Terraform Init
-        run: terraform init -input=false -no-color
+        if: steps.check.outputs.command != 'none'
+        run: terraform init
 
-      # 📋 Terraform Plan
       - name: Terraform Plan
-        if: env.action == 'plan' || env.action == 'auto'
-        id: plan
-        run: terraform plan -input=false -no-color | tee plan.log
+        if: steps.check.outputs.command == 'plan'
+        run: terraform plan -no-color | tee plan_output.txt
 
-      # 💬 Post Plan Result in PR Comment
-      - name: Post Plan Comment
-        if: env.action == 'plan' || env.action == 'auto'
-        uses: actions/github-script@v7
+      - name: Post Plan Output to PR
+        if: steps.check.outputs.command == 'plan'
+        uses: marocchino/sticky-pull-request-comment@v2
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const fs = require('fs');
-            const plan = fs.readFileSync('plan.log', 'utf8').slice(0, 65000);
-            const pr = context.payload.pull_request || context.issue;
-            if (pr) {
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: pr.number,
-                body: `🪄 **Terraform Plan Result:**\n\`\`\`\n${plan}\n\`\`\`\n💬 Comment **/apply** to deploy these changes.`
-              });
-            }
+          recreate: true
+          path: plan_output.txt
 
-      # 🚀 Terraform Apply
       - name: Terraform Apply
-        if: env.action == 'apply' || github.event_name == 'pull_request'
-        id: apply
-        run: terraform apply -auto-approve -input=false -no-color | tee apply.log
+        if: steps.check.outputs.command == 'apply'
+        run: terraform apply -auto-approve -no-color | tee apply_output.txt
 
-      # ✅ Post Apply Comment
-      - name: Post Apply Comment
-        if: env.action == 'apply' || github.event_name == 'pull_request'
-        uses: actions/github-script@v7
+      - name: Post Apply Output to PR
+        if: steps.check.outputs.command == 'apply'
+        uses: marocchino/sticky-pull-request-comment@v2
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const fs = require('fs');
-            const apply = fs.readFileSync('apply.log', 'utf8').slice(0, 65000);
-            const pr = context.payload.pull_request || context.issue;
-            if (pr) {
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: pr.number,
-                body: `🚀 **Terraform Apply Result:**\n\`\`\`\n${apply}\n\`\`\`\n✅ Deployment completed successfully!`
-              });
-            }
+          recreate: true
+          path: apply_output.txt
