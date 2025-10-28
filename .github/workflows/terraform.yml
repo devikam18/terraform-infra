@@ -10,9 +10,11 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  issues: write
 
 jobs:
   terraform:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     env:
       AWS_REGION: ap-south-2
@@ -46,20 +48,22 @@ jobs:
             Comment `/plan` to preview or `/apply` to deploy.
           commit-message: "chore: terraform auto update"
           delete-branch: false
-          branch-suffix: short-sha    # ✅ valid value
+          branch-suffix: timestamp
           labels: terraform, automation
           assignees: devikam18
           committer: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>
           author: devikam18 <233266106+devikam18@users.noreply.github.com>
           draft: false
 
+
   comment-trigger:
+    if: github.event_name == 'issue_comment' && contains(github.event.comment.body, '/')
     runs-on: ubuntu-latest
     permissions:
       issues: write
       pull-requests: write
       contents: write
-    if: github.event.issue.pull_request != null
+
     steps:
       - name: Check comment command
         id: check
