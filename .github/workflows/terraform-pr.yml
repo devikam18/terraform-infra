@@ -58,6 +58,7 @@ jobs:
             } else {
               core.setOutput("exists", "false");
             }
+              
 
       # 2️⃣ Create PR only if not exists
       - name: Create Pull Request
