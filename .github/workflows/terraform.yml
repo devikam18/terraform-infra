@@ -3,7 +3,7 @@ name: Terraform Automation
 on:
   push:
     branches:
-      - test  # auto trigger for 'test' branch
+      - test
   pull_request:
     branches:
       - test
@@ -39,8 +39,8 @@ jobs:
         with:
           terraform_version: 1.9.5
 
-      # 🧩 Step 1: Auto-create PR on push
-      - name: Create Pull Request
+      # 🧩 Step 1: Auto-create PR (keep open, don’t delete or close)
+      - name: Create or Update Pull Request
         if: github.event_name == 'push'
         id: create_pr
         uses: peter-evans/create-pull-request@v6
@@ -49,11 +49,19 @@ jobs:
           branch: test
           base: main
           title: "🪄 Terraform Infrastructure Changes"
-          body: "This PR contains automated Terraform plan and apply steps."
+          body: |
+            This PR contains automated Terraform plan and apply steps.
+            It will remain open until all changes are applied.
           commit-message: "chore: terraform auto update"
           delete-branch: false
+          draft: false
+          labels: terraform, automation
+          assignees: ${{ github.actor }}
+          # Prevents closing old PRs
+          update-existing-pr: true
+          keep-repo-branches: true
 
-      # 🧩 Step 2: Detect PR number dynamically
+      # 🧩 Step 2: Find PR number dynamically
       - name: Find PR number
         id: find_pr
         uses: actions/github-script@v7
@@ -81,7 +89,7 @@ jobs:
               core.setOutput("pr_number", prNumber);
               console.log(`✅ Found PR #${prNumber}`);
             } else {
-              console.log("⚠️ No PR found for this branch/event.");
+              console.log("⚠️ No open PR found for this branch.");
             }
 
       # 🧩 Step 3: Terraform Plan
@@ -94,8 +102,8 @@ jobs:
       - name: Terraform Plan
         run: terraform plan -no-color -out=tfplan | tee plan.log
 
-      # 🧩 Step 4: Post Plan Result to PR
-      - name: Post Plan Result
+      # 🧩 Step 4: Post Plan Result
+      - name: Post Plan Result to PR
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GTHUB_TOKEN }}
@@ -127,7 +135,7 @@ jobs:
           (github.event_name == 'push' && github.ref == 'refs/heads/test')
         run: terraform apply -auto-approve tfplan | tee apply.log
 
-      # 🧩 Step 6: Post Apply Result to PR
+      # 🧩 Step 6: Post Apply Result
       - name: Post Apply Result
         if: |
           (github.event_name == 'issue_comment' && startsWith(github.event.comment.body, '/apply')) ||
