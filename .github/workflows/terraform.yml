@@ -45,13 +45,15 @@ jobs:
           title: "🪄 Terraform Infrastructure Changes"
           body: |
             This PR contains automated Terraform plan and apply steps.
-            Comment `/plan` to preview or `/apply` to deploy.
+            💬 Comment `/plan` to preview or `/apply` to deploy.
           commit-message: "chore: terraform auto update"
           delete-branch: false
-          branch-suffix: none
-          allow-empty-commit: true
+          branch-suffix: short-commit
           labels: terraform, automation
           assignees: ${{ github.actor }}
+          committer: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>
+          author: ${{ github.actor }} <${{ github.actor }}@users.noreply.github.com>
+          draft: false
 
       # 🧩 Detect Action Type
       - name: Determine Trigger Type
@@ -123,3 +125,4 @@ jobs:
                 issue_number: pr.number,
                 body: `🚀 **Terraform Apply Result:**\n\`\`\`\n${apply}\n\`\`\`\n✅ Deployment completed successfully!`
               });
+            }
