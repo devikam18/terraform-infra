@@ -67,7 +67,7 @@ jobs:
         with:
           token: ${{ secrets.GTHUB_TOKEN }}
           branch: test
-          base: main
+          base: developer
           title: "🪄 Terraform Changes Detected"
           body: "Automated PR created for Terraform plan/apply."
           commit-message: "chore: Terraform update"
