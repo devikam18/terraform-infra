@@ -45,7 +45,7 @@ jobs:
         id: create_pr
         uses: peter-evans/create-pull-request@v6
         with:
-          token: ${{ secrets.GTHUB_TOKEN }}
+          token: ${{ secrets.GH_PAT }}
           branch: test
           base: main
           title: "🪄 Terraform Infrastructure Changes"
@@ -58,7 +58,7 @@ jobs:
         id: find_pr
         uses: actions/github-script@v7
         with:
-          github-token: ${{ secrets.GTHUB_TOKEN }}
+          github-token: ${{ secrets.GH_PAT }}
           script: |
             const event = context.payload;
             let prNumber = null;
@@ -98,7 +98,7 @@ jobs:
       - name: Post Plan Result
         uses: actions/github-script@v7
         with:
-          github-token: ${{ secrets.GTHUB_TOKEN }}
+          github-token: ${{ secrets.GH_PAT }}
           script: |
             const fs = require('fs');
             const planFile = 'plan.log';
@@ -134,7 +134,7 @@ jobs:
           (github.event_name == 'push' && github.ref == 'refs/heads/test')
         uses: actions/github-script@v7
         with:
-          github-token: ${{ secrets.GTHUB_TOKEN }}
+          github-token: ${{ secrets.GH_PAT }}
           script: |
             const fs = require('fs');
             const applyLog = 'apply.log';
