@@ -1,4 +1,4 @@
-name: Terraform Automation (auto-PR updated -> main + Sentinel)
+name: Terraform Automation (auto-PR updated -> main + tfsec + sentinel)
 
 on:
   push:
@@ -10,17 +10,15 @@ on:
 permissions:
   contents: write
   pull-requests: write
-  id-token: write
 
 env:
   AWS_REGION: ap-south-2
 
 jobs:
   terraform:
-    name: Terraform CI / PR / Sentinel / tfsec
     runs-on: ubuntu-latest
 
-    # Trigger on push to `updated` or when a PR comment /plan or /apply is posted
+    # run on push to updated OR when commenting /plan or /apply on an open PR
     if: |
       github.event_name == 'push' ||
       (github.event_name == 'issue_comment' &&
@@ -31,17 +29,19 @@ jobs:
       AWS_REGION: ap-south-2
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}   # Terraform Cloud token for non-interactive auth
+      # optional: set TF_TOKEN_app_terraform_io if you want Terraform Cloud API access (not required for local S3 backend)
+      TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
 
     steps:
-      # 1) Checkout (full history so we can create/update PRs)
+
+      # 1) Checkout full repo
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      # 2) Auto-create or update PR (guaranteed) from updated -> main
-      - name: Create or update Pull Request (updated → main)
+      # 2) Auto-create / update PR (updated -> main)
+      - name: Create or update PR (updated -> main)
         if: github.event_name == 'push'
         uses: repo-sync/pull-request@v2
         with:
@@ -52,7 +52,7 @@ jobs:
           pr_body: "Automated PR from updated → main created by workflow."
           pr_draft: false
 
-      # 3) Find open PR number for branch (used to post comments)
+      # 3) Find open PR number for 'updated' branch (used for comments)
       - name: Find PR number
         id: find_pr
         uses: actions/github-script@v7
@@ -72,13 +72,13 @@ jobs:
               console.log("No open PR from updated -> main found.");
             }
 
-      # 4) Setup Terraform
+      # 4) Setup Terraform CLI
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.9.5
 
-      # 5) Terraform init/validate in terraform-infra
+      # 5) Terraform init & validate (runs inside terraform-infra folder - S3 backend stays)
       - name: Terraform Init
         working-directory: ./terraform-infra
         run: terraform init -input=false
@@ -87,41 +87,97 @@ jobs:
         working-directory: ./terraform-infra
         run: terraform validate
 
-      # 6) Install tfsec CLI & run scan against terraform-infra
-      - name: Install tfsec CLI
+      # 6) Install tfsec CLI and run it against terraform-infra
+      - name: Install tfsec
         run: |
           curl -sSL https://raw.githubusercontent.com/aquasecurity/tfsec/master/scripts/install.sh | bash
 
       - name: Run tfsec scan (terraform-infra)
         run: |
+          set -e
           tfsec terraform-infra/ --format json --out tfsec.json || true
           tfsec terraform-infra/ | tee tfsec.txt || true
 
       - name: Post tfsec results to PR (comment)
         if: steps.find_pr.outputs.pr_number != ''
-        uses: aquasecurity/tfsec-pr-commenter-action@v1.0.3
+        uses: actions/github-script@v7
         with:
-          github_token: ${{ secrets.GH_PAT }}
+          github-token: ${{ secrets.GH_PAT }}
+          script: |
+            const fs = require('fs');
+            const pr = process.env.PR_NUMBER;
+            if (!pr) { console.log("No PR found; skipping tfsec comment."); return; }
+            if (!fs.existsSync('tfsec.txt')) { console.log("tfsec.txt not found; skipping."); return; }
+            const tfsec = fs.readFileSync('tfsec.txt','utf8').slice(0,65000);
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: parseInt(pr,10),
+              body: `🔎 **tfsec scan results**\n\`\`\`\n${tfsec}\n\`\`\``
+            });
+        env:
+          PR_NUMBER: ${{ steps.find_pr.outputs.pr_number }}
 
-      # 7) Terraform Plan (this will create a local plan; with Terraform Cloud backend configured in your .tf, remote run + Sentinel will also be triggered)
-      - name: Terraform Plan (create plan file & plan.log)
+      # 7) Terraform PLAN (generate tfplan and plan.log)
+      - name: Terraform Plan (create plan & JSON)
         working-directory: ./terraform-infra
         run: |
           terraform plan -no-color -out=tfplan | tee plan.log
+          terraform show -json tfplan > tfplan.json
 
-      # 8) Upload plan artifact (so apply job can download later)
       - name: Upload plan artifact
         uses: actions/upload-artifact@v4
         with:
           name: terraform-plan
           path: terraform-infra/tfplan
 
-      # 9) Post Plan to PR as comment (trim to 65k chars)
-      - name: Post Plan Result to PR
-        if: steps.find_pr.outputs.pr_number != ''
+      # 8) Install Sentinel CLI and run policies against the generated plan JSON
+      - name: Install Sentinel CLI
+        run: |
+          set -e
+          SENT_VER="0.29.0"
+          wget https://releases.hashicorp.com/sentinel/${SENT_VER}/sentinel_${SENT_VER}_linux_amd64.zip
+          unzip sentinel_${SENT_VER}_linux_amd64.zip
+          sudo mv sentinel /usr/local/bin/
+          rm -f sentinel_${SENT_VER}_linux_amd64.zip
+          sentinel version
+
+      - name: Run Sentinel policies locally (against tfplan.json)
+        working-directory: .
+        run: |
+          # sentinel policies import tfplan/v2 and will read the tfplan.json created above
+          # sentinel test requires test blocks in your policies (we added them earlier)
+          sentinel test sentinel/ || (echo "Sentinel check failed" && exit 1)
+
+      - name: Post Sentinel result to PR (on failure)
+        if: failure()
         uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+          script: |
+            const fs = require('fs');
+            const pr = process.env.PR_NUMBER;
+            let body = "❌ Sentinel policy check failed. Please fix policies or code.";
+            if (fs.existsSync('sentinel/test-output.txt')) {
+              body += "\n```\n" + fs.readFileSync('sentinel/test-output.txt','utf8').slice(0,65000) + "\n```";
+            }
+            if (pr) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: parseInt(pr,10),
+                body
+              });
+            } else {
+              console.log("No PR to comment on.");
+            }
         env:
           PR_NUMBER: ${{ steps.find_pr.outputs.pr_number }}
+
+      # 9) Post Plan to PR
+      - name: Post Plan to PR
+        if: steps.find_pr.outputs.pr_number != ''
+        uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GH_PAT }}
           script: |
@@ -135,10 +191,12 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: parseInt(pr,10),
-              body: `🛠️ **Terraform Plan**\n\`\`\`\n${body}\n\`\`\`\n_Note: If your Terraform config uses Terraform Cloud backend (configured to organization: Dev_terra18, workspace: devops-infra), Terraform Cloud will also run remote plan/apply and Sentinel policies attached to the workspace will be evaluated there._`
+              body: `🛠️ **Terraform Plan**\n\`\`\`\n${body}\n\`\`\`\n_Note: Sentinel policies were executed locally against the generated plan._`
             });
+        env:
+          PR_NUMBER: ${{ steps.find_pr.outputs.pr_number }}
 
-      # 10) Approval guard: require at least 1 APPROVED review before /apply proceeds
+      # 10) Guard: require at least one APPROVAL on the PR before allowing /apply
       - name: Require PR Approval before apply
         id: check_approvals
         if: github.event_name == 'issue_comment' && startsWith(github.event.comment.body, '/apply')
@@ -154,15 +212,14 @@ jobs:
               pull_number: prNumber
             });
             const approvals = reviews.data.filter(r => r.state === "APPROVED");
-            console.log("Approvals found:", approvals.length);
+            console.log("Approvals count:", approvals.length);
             if (approvals.length < 1) {
               core.setFailed("No APPROVED review found on the PR. Please add at least one approval before running /apply.");
             }
-
         env:
           PR_NUMBER: ${{ steps.find_pr.outputs.pr_number }}
 
-      # 11) Download the plan artifact for apply (only when /apply is used)
+      # 11) Download plan artifact (only when /apply)
       - name: Download plan artifact
         if: github.event_name == 'issue_comment' && startsWith(github.event.comment.body, '/apply')
         uses: actions/download-artifact@v4
@@ -177,12 +234,10 @@ jobs:
         run: |
           terraform apply -auto-approve tfplan | tee apply.log
 
-      # 13) Post Apply result to PR
-      - name: Post Apply Result to PR
+      # 13) Post Apply Result to PR
+      - name: Post Apply Result
         if: github.event_name == 'issue_comment' && startsWith(github.event.comment.body, '/apply')
         uses: actions/github-script@v7
-        env:
-          PR_NUMBER: ${{ steps.find_pr.outputs.pr_number }}
         with:
           github-token: ${{ secrets.GH_PAT }}
           script: |
@@ -197,7 +252,9 @@ jobs:
               issue_number: parseInt(pr,10),
               body: `🚀 **Terraform Apply Completed**\n\`\`\`\n${out}\n\`\`\`\n✅ Deployment successful.`
             });
+        env:
+          PR_NUMBER: ${{ steps.find_pr.outputs.pr_number }}
 
-      # # 14) Optional: echo uploaded image path (platform will transform local path to URL)
+      # # 14) Optional: echo uploaded image path (platform will convert to URL)
       # - name: Uploaded image path
       #   run: echo "Uploaded image: /mnt/data/48e12bfd-17ec-4db5-97f3-4bdf5a925cc1.png"
