@@ -3,7 +3,7 @@ name: Terraform Automation
 on:
   push:
     branches:
-      - test
+      - updated
   issue_comment:
     types: [created]
 
@@ -66,9 +66,9 @@ jobs:
           github-token: ${{ secrets.GH_PAT }}
           script: |
             const prs = await github.rest.pulls.list({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              head: `${context.repo.owner}:test`,
+              owner: devikam18,
+              repo: terraform-infra,
+              head: `${devikam18}:updated`,
               state: "open"
             });
             if (prs.data.length > 0) {
@@ -143,8 +143,8 @@ jobs:
             if (!fs.existsSync(planPath)) { console.log("plan.log missing"); return; }
             const plan = fs.readFileSync(planPath,'utf8').slice(0,65000);
             await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
+              owner: devikam18,
+              repo: terraform-infra,
               issue_number: parseInt(pr,10),
               body: `🛠️ **Terraform Plan**\n\`\`\`\n${plan}\n\`\`\`\n_Note: Sentinel policies run in Terraform Cloud for remote runs._`
             });
@@ -171,8 +171,8 @@ jobs:
             const prNumber = parseInt(process.env.PR_NUMBER);
             if (!prNumber) core.setFailed("PR number not found; cannot check approvals.");
             const reviews = await github.rest.pulls.listReviews({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
+              owner: devikam18,
+              repo: terraform-infra,
               pull_number: prNumber
             });
             const approvals = reviews.data.filter(r => r.state === "APPROVED");
@@ -211,8 +211,8 @@ jobs:
             if (!fs.existsSync(path)) return;
             const out = fs.readFileSync(path,'utf8').slice(0,65000);
             await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
+              owner: devikam18,
+              repo: terraform-infra,
               issue_number: parseInt(pr,10),
               body: `🚀 **Terraform Apply Completed**\n\`\`\`\n${out}\n\`\`\`\n✅ Deployment successful.`
             });
