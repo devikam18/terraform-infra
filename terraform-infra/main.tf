@@ -10,7 +10,6 @@ terraform {
     encrypt        = true
   }
 }
-terraform {
   cloud {
     organization = "Dev_terra18"
     workspaces {
