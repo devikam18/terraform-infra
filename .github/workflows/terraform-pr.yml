@@ -3,12 +3,10 @@ name: Terraform Automation
 on:
   push:
     branches:
-      - main
-      - test  # auto trigger for 'test' branch
+      - main 
   pull_request:
     branches:
       - main
-      - test
   issue_comment:
     types: [created]
 
