@@ -159,7 +159,7 @@ jobs:
 
 
       - name: Run Sentinel policies locally (against tfplan.json)
-        working-directory: .
+        working-directory: terraform-infra/sentinel
         run: |
           # sentinel policies import tfplan/v2 and will read the tfplan.json created above
           # sentinel test requires test blocks in your policies (we added them earlier)
