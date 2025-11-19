@@ -88,11 +88,14 @@ jobs:
         run: terraform validate
 
       # 6) Install tfsec CLI and run it against terraform-infra
-      - name: Install tfsec
-        shell: bash
+      - name: Install tfsec CLI
         run: |
-          set +u
-          curl -sSL https://raw.githubusercontent.com/aquasecurity/tfsec/master/scripts/install.sh | bash
+          sudo apt-get update
+          sudo apt-get install -y unzip wget
+          wget https://github.com/aquasecurity/tfsec/releases/download/v1.37.3/tfsec-linux-amd64
+          sudo mv tfsec-linux-amd64 /usr/local/bin/tfsec
+          sudo chmod +x /usr/local/bin/tfsec
+
 
       - name: Run tfsec scan (terraform-infra)
         run: |
