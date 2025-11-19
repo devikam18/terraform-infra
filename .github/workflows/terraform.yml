@@ -222,5 +222,5 @@ jobs:
       # ------------------
       # OPTIONAL: include the image you uploaded (converted URL will be provided by platform)
       # ------------------
-      - name: Example: include uploaded image path (platform will turn this into URL)
-        run: echo "Uploaded image: /mnt/data/48e12bfd-17ec-4db5-97f3-4bdf5a925cc1.png"
+      #- name: Example: include uploaded image path (platform will turn this into URL)
+       # run: echo "Uploaded image: /mnt/data/48e12bfd-17ec-4db5-97f3-4bdf5a925cc1.png"
