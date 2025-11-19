@@ -1,0 +1,11 @@
+import "tfplan/v2" as tfplan
+
+instances = tfplan.resource_changes.where(type == "aws_instance")
+
+invalid = instances.where(
+    not (_.change.after.instance_type matches "^t3|t4")
+)
+
+main = rule {
+    invalid is empty
+}

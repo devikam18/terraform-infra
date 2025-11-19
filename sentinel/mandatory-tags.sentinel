@@ -1,0 +1,10 @@
+import "tfplan/v2" as tfplan
+
+resources = tfplan.resource_changes
+
+main = rule {
+    all resources as r {
+        r.change.after.tags contains "Environment" and
+        r.change.after.tags contains "Owner"
+    }
+}
