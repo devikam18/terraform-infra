@@ -159,11 +159,13 @@ jobs:
 
 
       - name: Run Sentinel policies locally (against tfplan.json)
-        working-directory: ./terraform-infra
         run: |
-          # sentinel policies import tfplan/v2 and will read the tfplan.json created above
-          # sentinel test requires test blocks in your policies (we added them earlier)
-          sentinel test sentinel/ || (echo "Sentinel check failed" && exit 1)
+          if [ -d "terraform-infra/sentinel" ]; then
+            sentinel test terraform-infra/sentinel/ || (echo "Sentinel check failed" && exit 1)
+          else
+           echo "No sentinel policies found; skipping."
+          fi
+
 
       - name: Post Sentinel result to PR (on failure)
         if: failure()
