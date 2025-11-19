@@ -160,8 +160,8 @@ jobs:
 
       - name: Run Sentinel policies locally (against tfplan.json)
         run: |
-          if [ -d "terraform-infra/sentinel" ]; then
-            sentinel test terraform-infra/sentinel/ || (echo "Sentinel check failed" && exit 1)
+          if [ -d "sentinel" ]; then
+            sentinel test sentinel/ || (echo "Sentinel check failed" && exit 1)
           else
            echo "No sentinel policies found; skipping."
           fi
@@ -235,7 +235,7 @@ jobs:
               core.setFailed("No APPROVED review found on the PR. Please add at least one approval before running /apply.");
             }
         env:
-          PR_NUMBER: ${{ steps.find_pr.outputs.pr_number }}
+           PR_NUMBER: ${{ steps.find_pr.outputs.pr_number }}
 
       # 11) Download plan artifact (only when /apply)
       - name: Download plan artifact
