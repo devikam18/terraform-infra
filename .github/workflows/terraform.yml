@@ -1,0 +1,226 @@
+name: Terraform Automation
+
+on:
+  push:
+    branches:
+      - test
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write
+
+env:
+  AWS_REGION: ap-south-2
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+
+    # Run on: push to test OR PR comment /plan or /apply
+    if: |
+      github.event_name == 'push' ||
+      (github.event_name == 'issue_comment' &&
+       github.event.issue.pull_request != null &&
+       (startsWith(github.event.comment.body, '/plan') || startsWith(github.event.comment.body, '/apply')))
+
+    env:
+      AWS_REGION: ap-south-2
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      TF_CLOUD_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
+
+    steps:
+
+      # ------------------
+      # Checkout
+      # ------------------
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # ------------------
+      # Auto-create/update PR test -> main (always create)
+      # ------------------
+      - name: Create Pull Request (test → main)
+        if: github.event_name == 'push'
+        uses: repo-sync/pull-request@v2
+        with:
+          source_branch: "test"
+          destination_branch: "main"
+          github_token: ${{ secrets.GH_PAT }}
+          pr_title: "🪄 Terraform Infra Changes (auto)"
+          pr_body: "Automated PR from test → main created by workflow"
+          pr_draft: false
+
+      # ------------------
+      # Detect PR number (for comments)
+      # ------------------
+      - name: Detect PR number
+        id: find_pr
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+          script: |
+            const prs = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              head: `${context.repo.owner}:test`,
+              state: "open"
+            });
+            if (prs.data.length > 0) {
+              core.setOutput("pr_number", prs.data[0].number);
+              console.log("Found PR:", prs.data[0].number);
+            } else {
+              console.log("No open PR from test -> main found.");
+            }
+
+      # ------------------
+      # Terraform setup
+      # ------------------
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.5
+
+      # Use the terraform-infra folder (where your main.tf lives)
+      - name: Terraform Init (working dir)
+        working-directory: ./terraform-infra
+        run: |
+          # If using Terraform Cloud backend configured in .tf, this will use it.
+          terraform init -input=false
+
+      - name: Terraform Validate
+        working-directory: ./terraform-infra
+        run: terraform validate
+
+      # ------------------
+      # tfsec (Aqua) — PR commenter
+      # ------------------
+      - name: Run tfsec (PR comment)
+        uses: aquasecurity/tfsec-pr-commenter-action@v1.3.2
+        with:
+          github_token: ${{ secrets.GH_PAT }}
+        # no working-directory option supported by this action; it scans repo root.
+        # If your .tf files are under terraform-infra, set working-directory before running tfsec binary (alternative approach).
+      
+      # ------------------
+      # Sentinel via Terraform Cloud (remote run)
+      # ------------------
+      - name: Terraform login (Terraform Cloud)
+        working-directory: ./terraform-infra
+        run: |
+          # TF_CLOUD_TOKEN_app_terraform_io environment variable is set from secrets.TF_API_TOKEN
+          terraform login -no-browser
+        env:
+          TF_CLOUD_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
+
+      - name: Terraform Plan (trigger remote run in Terraform Cloud / Sentinel enforced)
+        working-directory: ./terraform-infra
+        run: |
+          # If backend is configured for Terraform Cloud, this will create a run there and Sentinel will evaluate it.
+          terraform plan -out=tfplan -no-color | tee plan.log
+        continue-on-error: false
+
+      - name: Upload Plan artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-plan
+          path: terraform-infra/tfplan
+
+      - name: Post Plan to PR (comment)
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+          script: |
+            const fs = require('fs');
+            const pr = process.env.PR_NUMBER;
+            const planPath = 'terraform-infra/plan.log';
+            if (!pr) { console.log("No PR number; skipping plan comment."); return; }
+            if (!fs.existsSync(planPath)) { console.log("plan.log missing"); return; }
+            const plan = fs.readFileSync(planPath,'utf8').slice(0,65000);
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: parseInt(pr,10),
+              body: `🛠️ **Terraform Plan**\n\`\`\`\n${plan}\n\`\`\`\n_Note: Sentinel policies run in Terraform Cloud for remote runs._`
+            });
+        env:
+          PR_NUMBER: ${{ steps.find_pr.outputs.pr_number }}
+
+      # ------------------
+      # (Optional) Wait for Terraform Cloud run result & post Sentinel status
+      # ------------------
+      # If you want to check the Terraform Cloud run status and post Sentinel decision,
+      # you would call the Terraform Cloud API here using TF_API_TOKEN and workspace/run ids.
+      # This step is optional and more advanced — I can add it on request.
+
+      # ------------------
+      # APPLY — only when someone comments "/apply" AND PR has approval(s)
+      # ------------------
+      - name: Check PR approval before apply
+        if: github.event_name == 'issue_comment' && startsWith(github.event.comment.body, '/apply')
+        id: check_approvals
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+          script: |
+            const prNumber = parseInt(process.env.PR_NUMBER);
+            if (!prNumber) core.setFailed("PR number not found; cannot check approvals.");
+            const reviews = await github.rest.pulls.listReviews({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber
+            });
+            const approvals = reviews.data.filter(r => r.state === "APPROVED");
+            console.log("Approvals found:", approvals.length);
+            if (approvals.length < 1) {
+              core.setFailed("No APPROVED review found on the PR. Please get at least one approval before /apply.");
+            } else {
+              core.setOutput("approved_count", approvals.length);
+            }
+        env:
+          PR_NUMBER: ${{ steps.find_pr.outputs.pr_number }}
+
+      - name: Download plan artifact
+        if: github.event_name == 'issue_comment' && startsWith(github.event.comment.body, '/apply')
+        uses: actions/download-artifact@v4
+        with:
+          name: terraform-plan
+          path: ./terraform-infra
+
+      - name: Terraform Apply (after approvals)
+        if: github.event_name == 'issue_comment' && startsWith(github.event.comment.body, '/apply')
+        working-directory: ./terraform-infra
+        run: |
+          terraform apply -auto-approve tfplan | tee apply.log
+
+      - name: Post Apply Result to PR
+        if: github.event_name == 'issue_comment' && startsWith(github.event.comment.body, '/apply')
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+          script: |
+            const fs = require('fs');
+            const pr = process.env.PR_NUMBER;
+            const path = "terraform-infra/apply.log";
+            if (!pr) return;
+            if (!fs.existsSync(path)) return;
+            const out = fs.readFileSync(path,'utf8').slice(0,65000);
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: parseInt(pr,10),
+              body: `🚀 **Terraform Apply Completed**\n\`\`\`\n${out}\n\`\`\`\n✅ Deployment successful.`
+            });
+        env:
+          PR_NUMBER: ${{ steps.find_pr.outputs.pr_number }}
+
+      # ------------------
+      # OPTIONAL: include the image you uploaded (converted URL will be provided by platform)
+      # ------------------
+      - name: Example: include uploaded image path (platform will turn this into URL)
+        run: echo "Uploaded image: /mnt/data/48e12bfd-17ec-4db5-97f3-4bdf5a925cc1.png"
