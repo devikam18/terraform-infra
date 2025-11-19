@@ -3,11 +3,16 @@ import "tfplan/v2" as tfplan
 all_s3 = tfplan.resource_changes.where(type == "aws_s3_bucket")
 
 public_buckets = all_s3.where(
-    _.change.after.acl is "public-read" or
-    _.change.after.acl is "public-read-write"
+    _.change.after.acl == "public-read" or
+    _.change.after.acl == "public-read-write"
 )
 
-# Deny if even 1 public bucket exists
 main = rule {
     public_buckets is empty
+}
+
+test {
+    rules = {
+        main = true
+    }
 }

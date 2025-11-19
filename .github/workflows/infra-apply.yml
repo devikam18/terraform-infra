@@ -1,47 +1,52 @@
 name: Terraform Automation
- 
+
 on:
   push:
     branches:
       - main
-  
+
   pull_request:
     branches:
       - main
+
   issue_comment:
     types: [created]
- 
+
 permissions:
   contents: write
   pull-requests: write
   id-token: write
- 
+
 jobs:
- 
+
   terraform:
     runs-on: ubuntu-latest
- 
+
     if: |
       github.event_name == 'push' ||
       (github.event_name == 'issue_comment' &&
        github.event.issue.pull_request != null &&
        startsWith(github.event.comment.body, '/plan'))
- 
+
     env:
       AWS_REGION: ap-south-2
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
- 
+
     steps:
+
       - name: Checkout repository
         uses: actions/checkout@v4
- 
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.9.5
- 
-      # Auto-create PR (on push)
+
+
+      ###################################
+      # AUTO CREATE PR
+      ###################################
       - name: Create Pull Request
         if: github.event_name == 'push'
         id: create_pr
@@ -54,8 +59,11 @@ jobs:
           body: "This PR contains automated Terraform plan."
           commit-message: "chore: terraform auto update"
           delete-branch: false
- 
-      # Find PR Number
+
+
+      ###################################
+      # FIND PR NUMBER
+      ###################################
       - name: Find PR Number
         id: find_pr
         uses: actions/github-script@v7
@@ -64,7 +72,7 @@ jobs:
           script: |
             const event = context.payload;
             let prNumber = null;
- 
+
             if (event.pull_request) {
               prNumber = event.pull_request.number;
             } else if (event.issue && event.issue.pull_request) {
@@ -79,34 +87,68 @@ jobs:
               if (prs.data.length > 0) prNumber = prs.data[0].number;
             }
             if (prNumber) core.setOutput("pr_number", prNumber);
- 
-      # Terraform Init
+
+
+      ###################################
+      # TERRAFORM INIT
+      ###################################
       - name: Terraform Init
         run: terraform init
- 
-      # Terraform Validate
+
+
+      ###################################
+      # TERRAFORM VALIDATE
+      ###################################
       - name: Terraform Validate
         run: terraform validate
- 
-      # Checkov Security Scan
-      # - name: Checkov Scan
-      #   uses: bridgecrewio/checkov-action@master
-      #   with:
-      #     quiet: true
-      #     directory: .
- 
-      # Terraform Plan
+
+
+      ###################################
+      # CHECKOV SECURITY SCAN
+      ###################################
+      - name: Checkov Scan
+        uses: bridgecrewio/checkov-action@master
+        with:
+          quiet: true
+          directory: .
+
+
+      ###################################
+      # SENTINEL POLICY CHECK
+      ###################################
+      - name: Sentinel Policy Check
+        run: |
+          wget https://releases.hashicorp.com/sentinel/0.29.0/sentinel_0.29.0_linux_amd64.zip
+          unzip sentinel_0.29.0_linux_amd64.zip
+          mv sentinel /usr/local/bin/
+          sentinel version
+
+          echo "Running Sentinel Policies..."
+          sentinel apply sentinel/ec2-instance-type.sentinel
+          sentinel apply sentinel/mandatory-tags.sentinel
+          sentinel apply sentinel/s3-no-public-buckets.sentinel
+
+
+      ###################################
+      # TERRAFORM PLAN
+      ###################################
       - name: Terraform Plan
         run: terraform plan -no-color -out=tfplan | tee plan.log
- 
-      # Upload Plan File
+
+
+      ###################################
+      # UPLOAD PLAN
+      ###################################
       - name: Upload Terraform Plan
         uses: actions/upload-artifact@v4
         with:
           name: terraform-plan
           path: tfplan
- 
-      # Post Plan as PR Comment
+
+
+      ###################################
+      # POST PLAN AS PR COMMENT
+      ###################################
       - name: Post Plan Result
         uses: actions/github-script@v7
         with:
@@ -115,7 +157,7 @@ jobs:
             const fs = require('fs');
             const prNumber = process.env.PR_NUMBER;
             if (!fs.existsSync('plan.log') || !prNumber) return;
- 
+
             const plan = fs.readFileSync('plan.log', 'utf8').slice(0, 65000);
             await github.rest.issues.createComment({
               owner: context.repo.owner,
@@ -125,39 +167,42 @@ jobs:
             });
         env:
           PR_NUMBER: ${{ steps.find_pr.outputs.pr_number }}
- 
- 
+
+
+  ###################################
+  # APPLY JOB — MANUAL APPROVAL + /apply
+  ###################################
   apply:
     needs: terraform
     runs-on: ubuntu-latest
-    environment: production   # 🔒 Manual approval happens in GitHub UI
- 
+    environment: production     # Manual approval gate
+
     if: github.event_name == 'issue_comment' && startsWith(github.event.comment.body, '/apply')
- 
+
     env:
       AWS_REGION: ap-south-2
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
- 
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
- 
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
- 
+
       - name: Download Terraform Plan
         uses: actions/download-artifact@v4
         with:
           name: terraform-plan
-          path: .
- 
+          
+
       - name: Terraform Init
         run: terraform init -input=false
- 
-      - name: Terraform Apply (after approval)
+
+      - name: Terraform Apply
         run: terraform apply -input=false tfplan | tee apply.log
- 
+
       - name: Post Apply Result
         uses: actions/github-script@v7
         with:
@@ -166,11 +211,11 @@ jobs:
             const fs = require('fs');
             const prNumber = context.issue.number;
             if (!fs.existsSync('apply.log')) return;
- 
+
             const apply = fs.readFileSync('apply.log', 'utf8').slice(0, 65000);
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: prNumber,
               body: `🚀 **Terraform Apply Completed:**\n\`\`\`\n${apply}\n\`\`\`\n✅ Deployment Successful!`
-            });
+            })
