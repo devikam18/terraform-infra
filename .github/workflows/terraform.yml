@@ -30,7 +30,7 @@ jobs:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       # optional: set TF_TOKEN_app_terraform_io if you want Terraform Cloud API access (not required for local S3 backend)
-      TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
+      TF_API_TOKEN: ${{ secrets.TF_API_TOKEN }}
 
     steps:
 
@@ -89,7 +89,9 @@ jobs:
 
       # 6) Install tfsec CLI and run it against terraform-infra
       - name: Install tfsec
+        shell: bash
         run: |
+          set +u
           curl -sSL https://raw.githubusercontent.com/aquasecurity/tfsec/master/scripts/install.sh | bash
 
       - name: Run tfsec scan (terraform-infra)
