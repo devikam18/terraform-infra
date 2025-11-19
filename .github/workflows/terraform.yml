@@ -143,12 +143,19 @@ jobs:
         run: |
           set -e
           SENT_VER="0.29.0"
+
+          # Remove old sentinel binary or folder if exists
+          if [ -e sentinel ] ; then
+            rm -rf sentinel
+          fi
+
           wget -q https://releases.hashicorp.com/sentinel/${SENT_VER}/sentinel_${SENT_VER}_linux_amd64.zip
-          unzip -o sentinel_${SENT_VER}_linux_amd64.zip
+          unzip sentinel_${SENT_VER}_linux_amd64.zip
           chmod +x sentinel
           sudo mv sentinel /usr/local/bin/
           rm -f sentinel_${SENT_VER}_linux_amd64.zip
           sentinel version
+
 
 
       - name: Run Sentinel policies locally (against tfplan.json)
