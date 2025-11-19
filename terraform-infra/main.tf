@@ -10,13 +10,13 @@ terraform {
     encrypt        = true
   }
 }
-  cloud {
-    organization = "Dev_terra18"
-    workspaces {
-      name = "devops-infra"   # the workspace you created in Terraform Cloud
+cloud {
+  organization = "Dev_terra18"
+  workspaces {
+    name = "devops-infra"   # the workspace you created in Terraform Cloud
     }
   }
-}
+
 ############################################
 # Provider
 ############################################
