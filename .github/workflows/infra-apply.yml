@@ -1,4 +1,4 @@
-name: Terraform Automation
+name: Terraform infra-apply
 
 on:
   workflow_dispatch:     # Manual trigger
