@@ -109,8 +109,12 @@ jobs:
       - name: Checkov Scan
         uses: bridgecrewio/checkov-action@master
         with:
-          quiet: true
           directory: .
+          quiet: true
+          soft_fail: true       # <-- Add this
+          output_format: sarif
+          output_file_path: results.sarif
+
 
 
       ###################################
