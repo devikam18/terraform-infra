@@ -1,0 +1,23 @@
+import "tfplan"
+
+required_tags = [
+  "Name",
+  "Environment",
+  "Owner",
+]
+
+resources = filter tfplan.resources as _, res {
+  res.applied.tags is not null
+}
+
+check_tags = rule {
+  all resources as _, r {
+    all required_tags as t {
+      r.applied.tags[t] is not null
+    }
+  }
+}
+
+main = rule {
+  check_tags
+}
