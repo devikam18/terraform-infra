@@ -1,15 +1,19 @@
 import "tfplan/v2" as tfplan
 
-all_s3 = tfplan.resource_changes.where(type == "aws_s3_bucket")
+s3_buckets = filter tfplan.resource_changes as _, rc {
+  rc.type is "aws_s3_bucket" and
+  rc.change.after contains key "acl"
+}
 
-public_buckets = all_s3.where(
-  change.after.acl exists and (
-    change.after.acl == "public-read" or
-    change.after.acl == "public-read-write"
-  )
-)
+deny_public = rule {
+  all s3_buckets as _, bucket {
+    bucket.change.after.acl != "public-read" and
+    bucket.change.after.acl != "public-read-write"
+  }
+}
 
 main = rule {
-  public_buckets is empty
+  deny_public
 }
+
 

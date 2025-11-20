@@ -1,13 +1,23 @@
 import "tfplan/v2" as tfplan
 
-# Get all EC2 instances from plan
-instances = tfplan.resource_changes.where(type == "aws_instance")
+allowed_types = [
+  "t2.micro",
+  "t3.micro",
+  "t3.small",
+]
 
-# Identify invalid instance types
-invalid = instances.where(
-  not (change.after.instance_type matches "^t[34]\\..*")
-)
+ec2_resources = filter tfplan.resource_changes as _, rc {
+    rc.type is "aws_instance" and
+    rc.change.after contains key "instance_type"
+}
+
+# Check instance type
+valid_instance_types = rule {
+  all ec2_resources as _, r {
+    r.change.after.instance_type in allowed_types
+  }
+}
 
 main = rule {
-  invalid is empty
+  valid_instance_types
 }

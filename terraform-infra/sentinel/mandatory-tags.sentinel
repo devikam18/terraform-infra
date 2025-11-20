@@ -1,16 +1,23 @@
 import "tfplan/v2" as tfplan
 
-resources = tfplan.resource_changes
+required_tags = [
+  "Name",
+  "Environment",
+  "Owner",
+]
 
-invalid = resources.where(
-  change.after exists and
-  change.after.tags exists and
-  (
-    not ("Environment" in change.after.tags) or
-    not ("Owner" in change.after.tags)
-  )
-)
+all_resources = filter tfplan.resource_changes as _, rc {
+  rc.change.after contains key "tags"
+}
+
+tags_present = rule {
+  all all_resources as _, res {
+    all required_tags as t {
+      res.change.after.tags contains key t
+    }
+  }
+}
 
 main = rule {
-  invalid is empty
+  tags_present
 }
