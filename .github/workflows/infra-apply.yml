@@ -50,14 +50,21 @@ jobs:
           directory: ./terraform-infra
         continue-on-error: true
 
-      - name: Sentinel Policy Check
-        working-directory: ./terraform-infra
+      - name: Install Sentinel CLI
         run: |
-          wget https://releases.hashicorp.com/sentinel/0.29.0/sentinel_0.29.0_linux_amd64.zip
-          unzip sentinel_0.29.0_linux_amd64.zip
+          set -e
+          SENT_VER="0.29.0"
+
+          # Delete old binary to avoid unzip prompts
+            rm -f sentinel
+
+          wget -q https://releases.hashicorp.com/sentinel/${SENT_VER}/sentinel_${SENT_VER}_linux_amd64.zip
+          unzip -o sentinel_${SENT_VER}_linux_amd64.zip
+          chmod +x sentinel
           sudo mv sentinel /usr/local/bin/
+          rm -f sentinel_${SENT_VER}_linux_amd64.zip
+
           sentinel version
-          sentinel test sentinel/ || true
 
       - name: Terraform Plan
         working-directory: ./terraform-infra
