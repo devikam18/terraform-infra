@@ -1,13 +1,15 @@
-name: Terraform Automation
+name: Terraform-apply.yml
+
+#name: Terraform Automation
 
 on:
-  push:
+  workflow_dispatch:     # Manual trigger
+
+  pull_request:          # Trigger on PRs into main
     branches:
-      - test  # auto trigger for 'test' branch
-  pull_request:
-    branches:
-      - test
-  issue_comment:
+      - main
+
+  issue_comment:         # For /plan and /apply commands
     types: [created]
 
 permissions:
@@ -16,6 +18,7 @@ permissions:
   id-token: write
 
 jobs:
+
   terraform:
     runs-on: ubuntu-latest
 
