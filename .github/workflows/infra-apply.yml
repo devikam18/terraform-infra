@@ -1,15 +1,13 @@
 name: Terraform Automation
 
 on:
-  push:
+  workflow_dispatch:     # Manual trigger
+
+  pull_request:          # Trigger on PRs into main
     branches:
       - main
 
-  pull_request:
-    branches:
-      - main
-
-  issue_comment:
+  issue_comment:         # For /plan and /apply commands
     types: [created]
 
 permissions:
