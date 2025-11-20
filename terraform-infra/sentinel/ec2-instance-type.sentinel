@@ -1,22 +1,13 @@
 import "tfplan/v2" as tfplan
 
-import "tfplan/v2" as tfplan
-
-# Get all EC2 instance resources
+# Get all EC2 instances from plan
 instances = tfplan.resource_changes.where(type == "aws_instance")
 
-# Deny if instance_type is NOT t3.* or t4.*
+# Identify invalid instance types
 invalid = instances.where(
-    not ( _.change.after.instance_type matches "^t[34]\\.." )
+  not (change.after.instance_type matches "^t[34]\\..*")
 )
 
 main = rule {
-    invalid is empty
-}
-
-# Required for sentinel test execution
-test {
-    rules = {
-        main = true
-    }
+  invalid is empty
 }

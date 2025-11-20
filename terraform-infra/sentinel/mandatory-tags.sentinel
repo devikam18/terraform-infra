@@ -3,20 +3,14 @@ import "tfplan/v2" as tfplan
 resources = tfplan.resource_changes
 
 invalid = resources.where(
-    # Validate only resources that actually have tags
-    _.change.after contains "tags" and 
-    (
-        not ("Environment" in _.change.after.tags) or
-        not ("Owner" in _.change.after.tags)
-    )
+  change.after exists and
+  change.after.tags exists and
+  (
+    not ("Environment" in change.after.tags) or
+    not ("Owner" in change.after.tags)
+  )
 )
 
 main = rule {
-    invalid is empty
-}
-
-test {
-    rules = {
-        main = true
-    }
+  invalid is empty
 }
