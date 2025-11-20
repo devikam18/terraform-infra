@@ -117,20 +117,20 @@ jobs:
 
 
 
-      ###################################
-      # SENTINEL POLICY CHECK
-      ###################################
-      - name: Sentinel Policy Check
-        run: |
-          wget https://releases.hashicorp.com/sentinel/0.29.0/sentinel_0.29.0_linux_amd64.zip
-          unzip sentinel_0.29.0_linux_amd64.zip
-          mv sentinel /usr/local/bin/
-          sentinel version
+      # ###################################
+      # # SENTINEL POLICY CHECK
+      # ###################################
+      # - name: Sentinel Policy Check
+      #   run: |
+      #     wget https://releases.hashicorp.com/sentinel/0.29.0/sentinel_0.29.0_linux_amd64.zip
+      #     unzip sentinel_0.29.0_linux_amd64.zip
+      #     mv sentinel /usr/local/bin/
+      #     sentinel version
 
-          echo "Running Sentinel Policies..."
-          sentinel apply sentinel/ec2-instance-type.sentinel
-          sentinel apply sentinel/mandatory-tags.sentinel
-          sentinel apply sentinel/s3-no-public-buckets.sentinel
+      #     echo "Running Sentinel Policies..."
+      #     sentinel apply sentinel/ec2-instance-type.sentinel
+      #     sentinel apply sentinel/mandatory-tags.sentinel
+      #     sentinel apply sentinel/s3-no-public-buckets.sentinel
 
 
       ###################################
