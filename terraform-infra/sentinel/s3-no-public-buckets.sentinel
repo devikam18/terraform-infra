@@ -1,0 +1,19 @@
+import "tfplan"
+
+buckets = filter tfplan.resources as _, res {
+  res.type == "aws_s3_bucket" and
+  res.applied.acl is not null
+}
+
+deny_public = rule {
+  all buckets as _, b {
+    b.applied.acl != "public-read" and
+    b.applied.acl != "public-read-write"
+  }
+}
+
+main = rule {
+  deny_public
+}
+
+

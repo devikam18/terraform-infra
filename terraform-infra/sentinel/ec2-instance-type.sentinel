@@ -1,0 +1,22 @@
+import "tfplan"
+
+allowed = [
+  "t2.micro",
+  "t3.micro",
+  "t3.small",
+]
+
+instances = filter tfplan.resources as _, res {
+  res.type == "aws_instance" and
+  res.applied.instance_type is not null
+}
+
+valid_instance_types = rule {
+  all instances as _, inst {
+    inst.applied.instance_type in allowed
+  }
+}
+
+main = rule {
+  valid_instance_types
+}
