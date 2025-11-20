@@ -1,19 +1,19 @@
-import "tfplan/v2" as tfplan
+import "tfplan"
 
-allowed_types = [
+allowed = [
   "t2.micro",
   "t3.micro",
   "t3.small",
 ]
 
-ec2_instances = filter tfplan.resource_changes as _, rc {
-    rc.type == "aws_instance" and
-    rc.change.after["instance_type"] is not null
+instances = filter tfplan.resources as _, res {
+  res.type == "aws_instance" and
+  res.applied.instance_type is not null
 }
 
 valid_instance_types = rule {
-  all ec2_instances as _, inst {
-    inst.change.after["instance_type"] in allowed_types
+  all instances as _, inst {
+    inst.applied.instance_type in allowed
   }
 }
 

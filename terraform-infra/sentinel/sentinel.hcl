@@ -10,7 +10,7 @@ policy "mandatory-tags" {
   source = "mandatory-tags.sentinel"
 }
 
-mock "tfplan/v2" {
+mock "tfplan" {
   module {
     source = "./mocks/tfplan.json"
   }
