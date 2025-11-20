@@ -6,15 +6,14 @@ allowed_types = [
   "t3.small",
 ]
 
-ec2_resources = filter tfplan.resource_changes as _, rc {
-    rc.type is "aws_instance" and
-    rc.change.after contains key "instance_type"
+ec2_instances = filter tfplan.resource_changes as _, rc {
+    rc.type == "aws_instance" and
+    rc.change.after["instance_type"] is not null
 }
 
-# Check instance type
 valid_instance_types = rule {
-  all ec2_resources as _, r {
-    r.change.after.instance_type in allowed_types
+  all ec2_instances as _, inst {
+    inst.change.after["instance_type"] in allowed_types
   }
 }
 

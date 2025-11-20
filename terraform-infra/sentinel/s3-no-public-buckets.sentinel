@@ -1,14 +1,14 @@
 import "tfplan/v2" as tfplan
 
 s3_buckets = filter tfplan.resource_changes as _, rc {
-  rc.type is "aws_s3_bucket" and
-  rc.change.after contains key "acl"
+  rc.type == "aws_s3_bucket" and
+  rc.change.after["acl"] is not null
 }
 
 deny_public = rule {
   all s3_buckets as _, bucket {
-    bucket.change.after.acl != "public-read" and
-    bucket.change.after.acl != "public-read-write"
+    bucket.change.after["acl"] != "public-read" and
+    bucket.change.after["acl"] != "public-read-write"
   }
 }
 

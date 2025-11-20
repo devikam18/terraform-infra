@@ -1,4 +1,4 @@
-import "tfplan/v2" as tfplan
+iimport "tfplan/v2" as tfplan
 
 required_tags = [
   "Name",
@@ -6,18 +6,18 @@ required_tags = [
   "Owner",
 ]
 
-all_resources = filter tfplan.resource_changes as _, rc {
-  rc.change.after contains key "tags"
+resources_with_tags = filter tfplan.resource_changes as _, rc {
+  rc.change.after["tags"] is not null
 }
 
-tags_present = rule {
-  all all_resources as _, res {
+check_tags = rule {
+  all resources_with_tags as _, res {
     all required_tags as t {
-      res.change.after.tags contains key t
+      res.change.after["tags"][t] is not null
     }
   }
 }
 
 main = rule {
-  tags_present
+  check_tags
 }
