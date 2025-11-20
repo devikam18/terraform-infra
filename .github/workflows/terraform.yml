@@ -159,6 +159,7 @@ jobs:
 
 
       - name: Run Sentinel policies locally (against tfplan.json)
+        working-directory: ./terraform-infra
         run: |
           if [ -d "sentinel" ]; then
             sentinel test sentinel/ || (echo "Sentinel check failed" && exit 1)
