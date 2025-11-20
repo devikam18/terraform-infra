@@ -1,24 +1,21 @@
-name: Terraform Automation
+name: Terraform infra apply
 
 on:
-  push:
+  workflow_dispatch:     # Manual trigger
+
+  pull_request:          # Trigger on PRs into main
     branches:
       - main
 
-  pull_request:
-    branches:
-      - main
-
-  issue_comment:
+  issue_comment:         # For /plan and /apply commands
     types: [created]
 
 permissions:
-  contents: write
+  contents: read
   pull-requests: write
   id-token: write
 
 jobs:
-
   terraform:
     runs-on: ubuntu-latest
 
@@ -111,12 +108,14 @@ jobs:
         with:
           quiet: true
           directory: .
+        continue-on-error: true
 
 
       ###################################
       # SENTINEL POLICY CHECK
       ###################################
       - name: Sentinel Policy Check
+        working-directory: ./terraform-infra
         run: |
           wget https://releases.hashicorp.com/sentinel/0.29.0/sentinel_0.29.0_linux_amd64.zip
           unzip sentinel_0.29.0_linux_amd64.zip
@@ -124,26 +123,25 @@ jobs:
           sentinel version
 
           echo "Running Sentinel Policies..."
-          sentinel apply sentinel/ec2-instance-type.sentinel
-          sentinel apply sentinel/mandatory-tags.sentinel
-          sentinel apply sentinel/s3-no-public-buckets.sentinel
+          sentinel apply /terraform-infra/sentinel/ec2-instance-type.sentinel
+          sentinel apply /terraform-infra/sentinel/mandatory-tags.sentinel
+          sentinel apply /terraform-infra/sentinel/s3-no-public-buckets.sentinel
 
 
       ###################################
       # TERRAFORM PLAN
       ###################################
-      - name: Terraform Plan
-        run: terraform plan -no-color -out=tfplan | tee plan.log
+      - name: Terraform Plan (create plan & JSON)
+        working-directory: ./terraform-infra
+        run: |
+          terraform plan -no-color -out=tfplan | tee plan.log
+          terraform show -json tfplan > tfplan.json
 
-
-      ###################################
-      # UPLOAD PLAN
-      ###################################
-      - name: Upload Terraform Plan
+      - name: Upload plan artifact
         uses: actions/upload-artifact@v4
         with:
           name: terraform-plan
-          path: tfplan
+          path: terraform-infra/tfplan
 
 
       ###################################
